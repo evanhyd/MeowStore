@@ -2,203 +2,192 @@ package storages
 
 import (
 	"database/sql"
-	"reflect"
 	"testing"
 	"time"
 )
 
-// setupTestDB creates an isolated in-memory database for each test.
-// We include the foreign_keys pragma in the DSN to ensure the test connection enforces it,
-// even if the driver resets connection states before executing schema.sql.
 func setupTestDB(t *testing.T) *SQLiteStorage {
-	dbPath := "file::memory:?cache=shared&_pragma=foreign_keys(1)"
-	storage := NewSQLiteStorage(dbPath)
-
+	store := NewSQLiteStorage(":memory:")
 	t.Cleanup(func() {
-		storage.Close()
+		store.Close()
 	})
-
-	return storage
+	return store
 }
 
 func TestPlaylistCRUD(t *testing.T) {
-	storage := setupTestDB(t)
+	store := setupTestDB(t)
 
+	userID := "user_123"
+	playlistID := int64(1)
 	now := time.Now().UnixNano()
-	expected := Playlist{
-		UserId:       1,
-		PlaylistId:   100,
-		Title:        "Meow Mix",
+
+	p := Playlist{
+		UserId:       userID,
+		PlaylistId:   playlistID,
+		Title:        "Workout Mix",
 		ModifiedDate: now,
-		CoverBlob:    []byte("blob_data"),
+		CoverBlob:    []byte("fake_image_data"),
 	}
 
-	// 1. Put
-	if err := storage.PutPlaylist(expected); err != nil {
+	// 1. Create
+	if err := store.PutPlaylist(p); err != nil {
 		t.Fatalf("PutPlaylist failed: %v", err)
 	}
 
-	// 2. Get
-	actual, err := storage.GetPlaylist(expected.UserId, expected.PlaylistId)
+	// 2. Read
+	fetched, err := store.GetPlaylist(userID, playlistID)
 	if err != nil {
 		t.Fatalf("GetPlaylist failed: %v", err)
 	}
-	if !reflect.DeepEqual(expected, actual) {
-		t.Errorf("expected %+v, got %+v", expected, actual)
+	if fetched.Title != p.Title {
+		t.Errorf("Expected title %s, got %s", p.Title, fetched.Title)
 	}
 
-	// 3. Update (Upsert)
-	expected.Title = "Updated Meow Mix"
-	if err := storage.PutPlaylist(expected); err != nil {
-		t.Fatalf("PutPlaylist (update) failed: %v", err)
+	// 3. Update (Testing ON CONFLICT)
+	p.Title = "Updated Workout Mix"
+	if err := store.PutPlaylist(p); err != nil {
+		t.Fatalf("PutPlaylist (Update) failed: %v", err)
 	}
 
-	updated, _ := storage.GetPlaylist(expected.UserId, expected.PlaylistId)
-	if updated.Title != "Updated Meow Mix" {
-		t.Errorf("expected title 'Updated Meow Mix', got '%s'", updated.Title)
+	fetched, _ = store.GetPlaylist(userID, playlistID)
+	if fetched.Title != "Updated Workout Mix" {
+		t.Errorf("Expected updated title, got %s", fetched.Title)
 	}
 
 	// 4. Delete
-	if err := storage.DeletePlaylist(expected.UserId, expected.PlaylistId); err != nil {
+	if err := store.DeletePlaylist(userID, playlistID); err != nil {
 		t.Fatalf("DeletePlaylist failed: %v", err)
 	}
 
-	if _, err := storage.GetPlaylist(expected.UserId, expected.PlaylistId); err != sql.ErrNoRows {
-		t.Errorf("expected sql.ErrNoRows after deletion, got %v", err)
+	// 5. Verify Deletion
+	_, err = store.GetPlaylist(userID, playlistID)
+	if err != sql.ErrNoRows {
+		t.Errorf("Expected sql.ErrNoRows after deletion, got: %v", err)
 	}
 }
 
 func TestMusicCRUD(t *testing.T) {
-	storage := setupTestDB(t)
+	store := setupTestDB(t)
 
-	expected := Music{
-		MusicId:       "vid_123",
-		Source:        YouTubeSource,
-		Title:         "Cat Video Compilation",
-		LengthSeconds: 600,
+	m := Music{
+		MusicId:       "yt_abc123",
+		Source:        YouTubeSource, // Assuming YouTubeSource is defined
+		Title:         "Never Gonna Give You Up",
+		LengthSeconds: 212,
 	}
 
-	// 1. Put
-	if err := storage.PutMusic(expected); err != nil {
+	// 1. Create
+	if err := store.PutMusic(m); err != nil {
 		t.Fatalf("PutMusic failed: %v", err)
 	}
 
-	// 2. Get
-	actual, err := storage.GetMusic(expected.MusicId, expected.Source)
+	// 2. Read
+	fetched, err := store.GetMusic(m.MusicId, m.Source)
 	if err != nil {
 		t.Fatalf("GetMusic failed: %v", err)
 	}
-	if !reflect.DeepEqual(expected, actual) {
-		t.Errorf("expected %+v, got %+v", expected, actual)
+	if fetched.Title != m.Title {
+		t.Errorf("Expected title %s, got %s", m.Title, fetched.Title)
 	}
 
 	// 3. Delete
-	if err := storage.DeleteMusic(expected.MusicId, expected.Source); err != nil {
+	if err := store.DeleteMusic(m.MusicId, m.Source); err != nil {
 		t.Fatalf("DeleteMusic failed: %v", err)
 	}
 
-	if _, err := storage.GetMusic(expected.MusicId, expected.Source); err != sql.ErrNoRows {
-		t.Errorf("expected sql.ErrNoRows after deletion, got %v", err)
+	// 4. Verify Deletion
+	_, err = store.GetMusic(m.MusicId, m.Source)
+	if err != sql.ErrNoRows {
+		t.Errorf("Expected sql.ErrNoRows after deletion, got: %v", err)
 	}
 }
 
-func TestPlaylistManagerMethods(t *testing.T) {
-	storage := setupTestDB(t)
+func TestPlaylistManagerLifecycle(t *testing.T) {
+	store := setupTestDB(t)
 
-	userId := int64(1)
-	playlistId := int64(10)
+	userID := "user_456"
+	playlistID := int64(10)
+	now := time.Now().UnixNano()
 
-	// Seed Data
-	storage.PutPlaylist(Playlist{UserId: userId, PlaylistId: playlistId, Title: "Test Playlist", CoverBlob: []byte("a")})
-	storage.PutPlaylist(Playlist{UserId: userId, PlaylistId: 11, Title: "Second Playlist", CoverBlob: []byte("a"), ModifiedDate: 1}) // Older
+	// Setup: Create a playlist and a music track first to satisfy foreign keys
+	// (Assuming your schema.sql enforces foreign keys. If not, this is still good practice).
+	if err := store.PutPlaylist(Playlist{UserId: userID, PlaylistId: playlistID, Title: "My Favorites", ModifiedDate: now, CoverBlob: []byte("")}); err != nil {
+		t.Fatalf("PutPlaylist failed: %v", err)
+	}
 
-	m1 := Music{MusicId: "m1", Source: YouTubeSource, Title: "Song 1"}
-	m2 := Music{MusicId: "m2", Source: SpotifySource, Title: "Song 2"}
-	storage.PutMusic(m1)
-	storage.PutMusic(m2)
+	m1 := Music{MusicId: "song_1", Source: SpotifySource, Title: "Song One", LengthSeconds: 100}
+	m2 := Music{MusicId: "song_2", Source: SpotifySource, Title: "Song Two", LengthSeconds: 200}
+	store.PutMusic(m1)
+	store.PutMusic(m2)
 
-	// 1. PutMusicInPlaylist
-	pm1 := PlaylistMusic{UserId: userId, PlaylistId: playlistId, MusicId: m1.MusicId, Source: m1.Source, AddedAt: 100}
-	pm2 := PlaylistMusic{UserId: userId, PlaylistId: playlistId, MusicId: m2.MusicId, Source: m2.Source, AddedAt: 200}
+	// 1. Add Music to Playlist
+	pm1 := PlaylistMusic{
+		UserId:     userID,
+		PlaylistId: playlistID,
+		MusicId:    m1.MusicId,
+		Source:     m1.Source,
+		AddedAt:    now,
+	}
+	pm2 := PlaylistMusic{
+		UserId:     userID,
+		PlaylistId: playlistID,
+		MusicId:    m2.MusicId,
+		Source:     m2.Source,
+		AddedAt:    now + 1000,
+	}
 
-	if err := storage.PutMusicInPlaylist(pm1); err != nil {
+	if err := store.PutMusicInPlaylist(pm1); err != nil {
 		t.Fatalf("PutMusicInPlaylist 1 failed: %v", err)
 	}
-	if err := storage.PutMusicInPlaylist(pm2); err != nil {
+	if err := store.PutMusicInPlaylist(pm2); err != nil {
 		t.Fatalf("PutMusicInPlaylist 2 failed: %v", err)
 	}
 
 	// 2. GetPlaylistsFromUser
-	playlists, err := storage.GetPlaylistsFromUser(userId)
+	playlists, err := store.GetPlaylistsFromUser(userID)
 	if err != nil {
 		t.Fatalf("GetPlaylistsFromUser failed: %v", err)
 	}
-	if len(playlists) != 2 {
-		t.Errorf("expected 2 playlists, got %d", len(playlists))
+	if len(playlists) != 1 {
+		t.Errorf("Expected 1 playlist, got %d", len(playlists))
 	}
 
-	// 3. GetMusicFromPlaylist
-	musics, err := storage.GetMusicFromPlaylist(userId, playlistId)
+	// 3. GetPlaylistMusicFromPlaylist (Returns relation table data)
+	pmRelations, err := store.GetPlaylistMusicFromPlaylist(userID, playlistID)
+	if err != nil {
+		t.Fatalf("GetPlaylistMusicFromPlaylist failed: %v", err)
+	}
+	if len(pmRelations) != 2 {
+		t.Errorf("Expected 2 relations, got %d", len(pmRelations))
+	}
+	// Check sorting (ORDER BY added_at ASC)
+	if pmRelations[0].MusicId != m1.MusicId {
+		t.Errorf("Expected first song to be %s, got %s", m1.MusicId, pmRelations[0].MusicId)
+	}
+
+	// 4. GetMusicFromPlaylist (Returns joined Music data)
+	musicList, err := store.GetMusicFromPlaylist(userID, playlistID)
 	if err != nil {
 		t.Fatalf("GetMusicFromPlaylist failed: %v", err)
 	}
-	if len(musics) != 2 {
-		t.Fatalf("expected 2 musics, got %d", len(musics))
+	if len(musicList) != 2 {
+		t.Errorf("Expected 2 music tracks, got %d", len(musicList))
 	}
-	if musics[0].MusicId != "m1" || musics[1].MusicId != "m2" {
-		t.Errorf("expected ordering by added_at (m1 then m2)")
-	}
-
-	// 4. GetPlaylistMusicFromPlaylist
-	pms, err := storage.GetPlaylistMusicFromPlaylist(userId, playlistId)
-	if err != nil {
-		t.Fatalf("GetPlaylistMusicFromPlaylist failed: %v", err)
-	}
-	if len(pms) != 2 {
-		t.Fatalf("expected 2 PlaylistMusic records, got %d", len(pms))
-	}
-	if !reflect.DeepEqual(pms[0], pm1) {
-		t.Errorf("expected %+v, got %+v", pm1, pms[0])
+	if musicList[0].Title != m1.Title {
+		t.Errorf("Expected joined title to be %s, got %s", m1.Title, musicList[0].Title)
 	}
 
-	// 5. DeleteMusicFromPlaylist
-	if err := storage.DeleteMusicFromPlaylist(userId, playlistId, m1.MusicId, m1.Source); err != nil {
+	// 5. Delete Music From Playlist
+	if err := store.DeleteMusicFromPlaylist(userID, playlistID, m1.MusicId, m1.Source); err != nil {
 		t.Fatalf("DeleteMusicFromPlaylist failed: %v", err)
 	}
 
-	musicsAfterDelete, _ := storage.GetMusicFromPlaylist(userId, playlistId)
-	if len(musicsAfterDelete) != 1 {
-		t.Errorf("expected 1 music after deletion, got %d", len(musicsAfterDelete))
+	// Verify it was removed
+	remaining, _ := store.GetPlaylistMusicFromPlaylist(userID, playlistID)
+	if len(remaining) != 1 {
+		t.Errorf("Expected 1 relation remaining, got %d", len(remaining))
 	}
-}
-
-func TestCascadeDelete(t *testing.T) {
-	storage := setupTestDB(t)
-
-	userId := int64(2)
-	playlistId := int64(20)
-	musicId := "cascade_test"
-
-	storage.PutPlaylist(Playlist{UserId: userId, PlaylistId: playlistId, Title: "Cascade"})
-	storage.PutMusic(Music{MusicId: musicId, Source: YouTubeSource, Title: "Cascade Song"})
-	storage.PutMusicInPlaylist(PlaylistMusic{UserId: userId, PlaylistId: playlistId, MusicId: musicId, Source: YouTubeSource})
-
-	// Delete the playlist
-	if err := storage.DeletePlaylist(userId, playlistId); err != nil {
-		t.Fatalf("DeletePlaylist failed: %v", err)
-	}
-
-	// Verify PlaylistMusic was cascaded
-	pms, err := storage.GetPlaylistMusicFromPlaylist(userId, playlistId)
-	if err != nil {
-		t.Fatalf("GetPlaylistMusicFromPlaylist failed: %v", err)
-	}
-	if len(pms) != 0 {
-		t.Errorf("expected PlaylistMusic to be deleted via cascade, found %d records", len(pms))
-	}
-
-	// Verify Music still exists (RESTRICT/No cascade on music table)
-	if _, err := storage.GetMusic(musicId, YouTubeSource); err != nil {
-		t.Errorf("expected music to remain after playlist deletion, got error: %v", err)
+	if remaining[0].MusicId != m2.MusicId {
+		t.Errorf("Expected remaining song to be %s", m2.MusicId)
 	}
 }

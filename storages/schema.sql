@@ -2,7 +2,7 @@ PRAGMA foreign_keys = ON;
 
 -- Playlist table
 CREATE TABLE IF NOT EXISTS playlists (
-    user_id INTEGER NOT NULL,
+    user_id TEXT NOT NULL,
     playlist_id INTEGER NOT NULL,
     title TEXT NOT NULL,
     modified_date INTEGER NOT NULL,  -- Unix nano
@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS music (
 
 -- Playlist_Music table
 CREATE TABLE IF NOT EXISTS playlist_music (
-    user_id INTEGER NOT NULL,
+    user_id TEXT NOT NULL,
     playlist_id INTEGER NOT NULL,
     music_id TEXT NOT NULL,
     source INTEGER NOT NULL,

@@ -49,7 +49,7 @@ func (s *SQLiteStorage) PutPlaylist(playlist Playlist) error {
 	return err
 }
 
-func (s *SQLiteStorage) GetPlaylist(userId int64, playlistID int64) (Playlist, error) {
+func (s *SQLiteStorage) GetPlaylist(userId string, playlistID int64) (Playlist, error) {
 	p := Playlist{UserId: userId}
 	err := s.db.QueryRow(
 		`SELECT playlist_id, title, modified_date, cover_blob
@@ -60,7 +60,7 @@ func (s *SQLiteStorage) GetPlaylist(userId int64, playlistID int64) (Playlist, e
 	return p, err
 }
 
-func (s *SQLiteStorage) DeletePlaylist(userId int64, playlistID int64) error {
+func (s *SQLiteStorage) DeletePlaylist(userId string, playlistID int64) error {
 	_, err := s.db.Exec(`DELETE FROM playlists WHERE user_id = ? AND playlist_id = ?`, userId, playlistID)
 	return err
 }
@@ -103,7 +103,7 @@ func (s *SQLiteStorage) PutMusicInPlaylist(playlistMusic PlaylistMusic) error {
 	return err
 }
 
-func (s *SQLiteStorage) GetPlaylistsFromUser(userId int64) ([]Playlist, error) {
+func (s *SQLiteStorage) GetPlaylistsFromUser(userId string) ([]Playlist, error) {
 	rows, err := s.db.Query(
 		`SELECT playlist_id, title, modified_date, cover_blob FROM playlists WHERE user_id = ? ORDER BY modified_date DESC`,
 		userId,
@@ -124,7 +124,7 @@ func (s *SQLiteStorage) GetPlaylistsFromUser(userId int64) ([]Playlist, error) {
 	return playlists, nil
 }
 
-func (s *SQLiteStorage) GetMusicFromPlaylist(userId int64, playlistID int64) ([]Music, error) {
+func (s *SQLiteStorage) GetMusicFromPlaylist(userId string, playlistID int64) ([]Music, error) {
 	rows, err := s.db.Query(
 		`SELECT m.music_id, m.source, m.title, m.length_seconds
         FROM music m
@@ -149,7 +149,7 @@ func (s *SQLiteStorage) GetMusicFromPlaylist(userId int64, playlistID int64) ([]
 	return musics, nil
 }
 
-func (s *SQLiteStorage) GetPlaylistMusicFromPlaylist(userId int64, playlistID int64) ([]PlaylistMusic, error) {
+func (s *SQLiteStorage) GetPlaylistMusicFromPlaylist(userId string, playlistID int64) ([]PlaylistMusic, error) {
 	rows, err := s.db.Query(
 		`SELECT p.music_id, p.source, p.added_at
         FROM playlist_music p
@@ -173,7 +173,7 @@ func (s *SQLiteStorage) GetPlaylistMusicFromPlaylist(userId int64, playlistID in
 	return playlistMusic, nil
 }
 
-func (s *SQLiteStorage) DeleteMusicFromPlaylist(userId int64, playlistID int64, musicID string, source MusicSource) error {
+func (s *SQLiteStorage) DeleteMusicFromPlaylist(userId string, playlistID int64, musicID string, source MusicSource) error {
 	_, err := s.db.Exec(
 		`DELETE FROM playlist_music WHERE user_id = ? AND playlist_id = ? AND music_id = ? AND source = ?`,
 		userId, playlistID, musicID, source,
