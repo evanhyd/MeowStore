@@ -2,182 +2,174 @@ package handlers
 
 import (
 	"encoding/json"
-	"log"
+	"errors"
+	"io"
 	"meowstore/storages"
 	"net/http"
-	"strconv"
 	"strings"
+
+	"github.com/golang-jwt/jwt/v5"
 )
 
-type Handler struct {
-	Store storages.Storage
-	Auth  *AuthHandler
+type ServiceHandler struct {
+	storage   storages.Storage
+	jwtSecret []byte
 }
 
-type PlaylistDetailResponse struct {
-	Playlist      storages.Playlist        `json:"playlist"`
-	Music         []storages.Music         `json:"tracks"`
-	PlaylistMusic []storages.PlaylistMusic `json:"metadata"`
+func NewServiceHandler(storage storages.Storage, secret []byte) *ServiceHandler {
+	return &ServiceHandler{storage: storage, jwtSecret: secret}
 }
 
-// --- Common Helper Functions ---
-
-func sendJSON(w http.ResponseWriter, code int, payload interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code)
-	if err := json.NewEncoder(w).Encode(payload); err != nil {
-		log.Printf("Failed to encode JSON response: %v", err)
+func (h *ServiceHandler) extractUserID(r *http.Request) (string, error) {
+	authHeader := r.Header.Get("Authorization")
+	if authHeader == "" {
+		return "", errors.New("missing authorization header")
 	}
-}
 
-func sendError(w http.ResponseWriter, msg string, code int) {
-	sendJSON(w, code, map[string]string{"error": msg})
-}
-
-// extractPlaylistID simplifies the repeated URL parsing logic
-func extractPlaylistID(r *http.Request) (int64, error) {
-	idStr := strings.TrimPrefix(r.URL.Path, "/playlist/")
-	if idStr == "" {
-		return 0, strconv.ErrSyntax
+	parts := strings.Split(authHeader, " ")
+	if len(parts) != 2 || strings.ToLower(parts[0]) != "bearer" {
+		return "", errors.New("invalid authorization header format")
 	}
-	return strconv.ParseInt(idStr, 10, 64)
-}
 
-// --- The Auth Wrapper ---
+	tokenString := parts[1]
 
-func (h *Handler) WithAuth(handler func(w http.ResponseWriter, r *http.Request, userID string)) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		userID, err := h.Auth.getUserIDFromHeader(r)
-		if err != nil {
-			sendError(w, err.Error(), http.StatusUnauthorized)
-			return
+	// jwt.ParseWithClaims automatically validates the expiration date if present in RegisteredClaims
+	token, err := jwt.ParseWithClaims(tokenString, &jwt.RegisteredClaims{}, func(token *jwt.Token) (any, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, errors.New("unexpected signing method")
 		}
-		handler(w, r, userID)
+		return h.jwtSecret, nil
+	})
+
+	if err != nil {
+		return "", err
 	}
+
+	if claims, ok := token.Claims.(*jwt.RegisteredClaims); ok && token.Valid {
+		if claims.Subject == "" {
+			return "", errors.New("missing subject in token")
+		}
+		return claims.Subject, nil
+	}
+
+	return "", errors.New("invalid token")
 }
 
-// --- Handlers ---
-
-// GetAllPlaylists retrieves all playlists for the authenticated user.
-func (h *Handler) GetAllPlaylists(w http.ResponseWriter, r *http.Request, userID string) {
-	playlists, err := h.Store.GetPlaylistsFromUser(userID)
-	if err != nil {
-		sendError(w, "Failed to retrieve playlists", http.StatusInternalServerError)
+func (h *ServiceHandler) GetPlaylistsMeta(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		sendError(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	if playlists == nil {
-		playlists = []storages.Playlist{}
+	userId, err := h.extractUserID(r)
+	if err != nil {
+		sendError(w, "Unauthorized: "+err.Error(), http.StatusUnauthorized)
+		return
 	}
 
-	sendJSON(w, http.StatusOK, playlists)
+	// Decode the body for consistency, ignoring EOF if the body is completely empty
+	var req GetPlaylistsMetaRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
+		sendError(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	metas, err := h.storage.GetPlaylistsMetaFromUser(userId)
+	if err != nil {
+		sendError(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+
+	if metas == nil {
+		metas = []storages.PlaylistMeta{}
+	}
+
+	sendJSON(w, http.StatusOK, GetPlaylistsMetaResponse{PlaylistsMeta: metas})
 }
 
-// GetPlaylist retrieves a specific playlist.
-func (h *Handler) GetPlaylist(w http.ResponseWriter, r *http.Request, userID string) {
-	playlistID, err := extractPlaylistID(r)
-	if err != nil {
-		sendError(w, "Invalid playlist ID format", http.StatusBadRequest)
+func (h *ServiceHandler) GetPlaylist(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		sendError(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	playlist, err := h.Store.GetPlaylist(userID, playlistID)
+	userId, err := h.extractUserID(r)
 	if err != nil {
-		sendError(w, "Playlist not found", http.StatusNotFound)
+		sendError(w, "Unauthorized: "+err.Error(), http.StatusUnauthorized)
 		return
 	}
 
-	tracks, err := h.Store.GetMusicFromPlaylist(userID, playlistID)
-	if err != nil {
-		sendError(w, "Failed to retrieve tracks", http.StatusInternalServerError)
+	var req GetPlaylistRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		sendError(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
-	metadata, err := h.Store.GetPlaylistMusicFromPlaylist(userID, playlistID)
+	playlist, err := h.storage.GetPlaylist(userId, req.PlaylistId)
 	if err != nil {
-		sendError(w, "Failed to retrieve playlist metadata", http.StatusInternalServerError)
+		sendError(w, "Playlist not found or database error", http.StatusInternalServerError)
 		return
 	}
 
-	if tracks == nil {
-		tracks = []storages.Music{}
-	}
-	if metadata == nil {
-		metadata = []storages.PlaylistMusic{}
+	musics, relations, err := h.storage.GetMusicFromPlaylist(userId, req.PlaylistId)
+	if err != nil {
+		sendError(w, "Failed to retrieve music", http.StatusInternalServerError)
+		return
 	}
 
-	sendJSON(w, http.StatusOK, PlaylistDetailResponse{
-		Playlist:      playlist,
-		Music:         tracks,
-		PlaylistMusic: metadata,
+	if musics == nil {
+		musics = []storages.Music{}
+	}
+	if relations == nil {
+		relations = []storages.PlaylistMusic{}
+	}
+
+	sendJSON(w, http.StatusOK, GetPlaylistResponse{
+		Playlist:  playlist,
+		Musics:    musics,
+		Relations: relations,
 	})
 }
 
-// PutPlaylist creates or overwrites the playlist metadata.
-func (h *Handler) PutPlaylist(w http.ResponseWriter, r *http.Request, userID string) {
-	playlistID, err := extractPlaylistID(r)
+func (h *ServiceHandler) PutPlaylist(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		sendError(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	userId, err := h.extractUserID(r)
 	if err != nil {
-		sendError(w, "Invalid playlist ID format", http.StatusBadRequest)
+		sendError(w, "Unauthorized: "+err.Error(), http.StatusUnauthorized)
 		return
 	}
 
-	var req storages.Playlist
+	var req PutPlaylistRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		sendError(w, "Invalid JSON payload", http.StatusBadRequest)
+		sendError(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
-	req.UserId = userID
-	req.PlaylistId = playlistID
-
-	if err := h.Store.PutPlaylist(req); err != nil {
+	req.Playlist.UserId = userId
+	if err := h.storage.PutPlaylist(req.Playlist); err != nil {
 		sendError(w, "Failed to save playlist", http.StatusInternalServerError)
 		return
 	}
 
-	sendJSON(w, http.StatusOK, map[string]string{"status": "success"})
-}
-
-// DeletePlaylist removes the playlist from storage.
-func (h *Handler) DeletePlaylist(w http.ResponseWriter, r *http.Request, userID string) {
-	playlistID, err := extractPlaylistID(r)
-	if err != nil {
-		sendError(w, "Invalid playlist ID format", http.StatusBadRequest)
-		return
-	}
-
-	if err := h.Store.DeletePlaylist(userID, playlistID); err != nil {
-		sendError(w, "Failed to delete playlist", http.StatusInternalServerError)
-		return
-	}
-
-	w.WriteHeader(http.StatusNoContent)
-}
-
-// --- Routing ---
-
-func RegisterRoutes(mux *http.ServeMux, h *Handler) {
-	// Wrap GetAllPlaylists
-	mux.HandleFunc("/playlists", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			sendError(w, "Method not allowed", http.StatusMethodNotAllowed)
+	for _, music := range req.Musics {
+		if err := h.storage.PutMusic(music); err != nil {
+			sendError(w, "Failed to save music", http.StatusInternalServerError)
 			return
 		}
-		// Apply the wrapper
-		h.WithAuth(h.GetAllPlaylists)(w, r)
-	})
+	}
 
-	// Wrap specific playlist operations
-	mux.HandleFunc("/playlist/", func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodGet:
-			h.WithAuth(h.GetPlaylist)(w, r)
-		case http.MethodPut:
-			h.WithAuth(h.PutPlaylist)(w, r)
-		case http.MethodDelete:
-			h.WithAuth(h.DeletePlaylist)(w, r)
-		default:
-			sendError(w, "Method not allowed", http.StatusMethodNotAllowed)
+	for _, relation := range req.Relations {
+		relation.UserId = userId
+		relation.PlaylistId = req.Playlist.PlaylistId
+		if err := h.storage.PutMusicInPlaylist(relation); err != nil {
+			sendError(w, "Failed to save playlist relation", http.StatusInternalServerError)
+			return
 		}
-	})
+	}
+
+	sendJSON(w, http.StatusOK, PutPlaylistResponse{})
 }

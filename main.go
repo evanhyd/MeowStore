@@ -21,14 +21,6 @@ func main() {
 	logger := loggers.InitializeGlobalLogger(*logFlag)
 	defer logger.Close()
 
-	// JWT key.
-	jwtKey, err := os.ReadFile(*jwtKeyFlag)
-	if err != nil {
-		slog.Error("failed to read jwt key", "error", err)
-		return
-	}
-	authAPI := handlers.NewAuthHandler(jwtKey)
-
 	// SQL storage.
 	storage := storages.NewSQLiteStorage(*dbFlag)
 	if storage == nil {
@@ -36,14 +28,20 @@ func main() {
 	}
 	defer storage.Close()
 
-	appHandler := &handlers.Handler{
-		Store: storage,
-		Auth:  authAPI,
+	// JWT key.
+	jwtKey, err := os.ReadFile(*jwtKeyFlag)
+	if err != nil {
+		slog.Error("failed to read jwt key", "error", err)
+		return
 	}
+	service := handlers.NewServiceHandler(storage, jwtKey)
 
 	// Start the server.
 	mux := http.NewServeMux()
-	handlers.RegisterRoutes(mux, appHandler)
+	mux.HandleFunc("/playlist/meta", service.GetPlaylistsMeta)
+	mux.HandleFunc("/playlist/get", service.GetPlaylist)
+	mux.HandleFunc("/playlist/put", service.PutPlaylist)
+
 	addr := ":" + *portFlag
 	slog.Info("Server is starting", "port", *portFlag)
 	if err := http.ListenAndServe(addr, mux); err != nil {

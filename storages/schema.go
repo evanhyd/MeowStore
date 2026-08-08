@@ -1,9 +1,5 @@
 package storages
 
-import (
-	"strings"
-)
-
 type MusicSource int64
 
 const (
@@ -12,12 +8,20 @@ const (
 	SpotifySource
 )
 
+type PlaylistMeta struct {
+	UserId       string
+	PlaylistId   int64
+	Deleted      bool
+	ModifiedDate int64 // Unix nano
+}
+
 // Playlist table
 type Playlist struct {
 	UserId       string
 	PlaylistId   int64
-	Title        string
+	Deleted      bool
 	ModifiedDate int64 // Unix nano
+	Title        string
 	CoverBlob    []byte
 }
 
@@ -36,18 +40,4 @@ type PlaylistMusic struct {
 	MusicId    string
 	Source     MusicSource
 	AddedAt    int64 // Unix nano
-}
-
-func ComparePlaylist(l Playlist, r Playlist) int {
-	if l.PlaylistId != r.PlaylistId {
-		return int(l.PlaylistId) - int(r.PlaylistId)
-	}
-	return strings.Compare(l.UserId, r.UserId)
-}
-
-func CompareMusic(l Music, r Music) int {
-	if l.MusicId != r.MusicId {
-		return strings.Compare(l.MusicId, r.MusicId)
-	}
-	return int(l.Source) - int(r.Source)
 }
