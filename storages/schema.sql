@@ -1,6 +1,6 @@
 PRAGMA foreign_keys = ON;
 
-CREATE TABLE IF NOT EXISTS playlists (
+CREATE TABLE IF NOT EXISTS playlist (
     user_id TEXT,
     playlist_id INTEGER,
     deleted BOOLEAN NOT NULL,
@@ -25,6 +25,6 @@ CREATE TABLE IF NOT EXISTS playlist_music (
     source INTEGER,
     added_at INTEGER NOT NULL,      -- Unix nano
     PRIMARY KEY(user_id, playlist_id, music_id, source),
-    FOREIGN KEY(user_id, playlist_id) REFERENCES playlists(user_id, playlist_id) ON DELETE CASCADE,
+    FOREIGN KEY(user_id, playlist_id) REFERENCES playlist(user_id, playlist_id) ON DELETE CASCADE,
     FOREIGN KEY(music_id, source) REFERENCES music(music_id, source) ON DELETE RESTRICT
 );

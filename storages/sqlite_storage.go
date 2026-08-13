@@ -38,14 +38,14 @@ func (s *SQLiteStorage) Close() error {
 }
 
 func (s *SQLiteStorage) PutPlaylist(playlist Playlist) error {
-	_, err := s.db.Exec(`INSERT INTO playlists(user_id, playlist_id, deleted, title, modified_date, cover_blob) VALUES (?, ?, ?, ?, ?, ?) 
+	_, err := s.db.Exec(`INSERT INTO playlist(user_id, playlist_id, deleted, title, modified_date, cover_blob) VALUES (?, ?, ?, ?, ?, ?) 
 	ON CONFLICT (user_id, playlist_id) DO UPDATE SET deleted = excluded.deleted, title = excluded.title, modified_date = excluded.modified_date, cover_blob = excluded.cover_blob`,
 		playlist.UserId, playlist.PlaylistId, playlist.Deleted, playlist.Title, playlist.ModifiedDate, playlist.CoverBlob)
 	return err
 }
 
 func (s *SQLiteStorage) GetPlaylist(userId string, playlistId int64) (Playlist, error) {
-	row := s.db.QueryRow(`SELECT deleted, title, modified_date, cover_blob FROM playlists WHERE user_id = ? AND playlist_id = ?`, userId, playlistId)
+	row := s.db.QueryRow(`SELECT deleted, title, modified_date, cover_blob FROM playlist WHERE user_id = ? AND playlist_id = ?`, userId, playlistId)
 
 	playlist := Playlist{UserId: userId, PlaylistId: playlistId}
 	if err := row.Scan(&playlist.Deleted, &playlist.Title, &playlist.ModifiedDate, &playlist.CoverBlob); err != nil {
@@ -55,7 +55,7 @@ func (s *SQLiteStorage) GetPlaylist(userId string, playlistId int64) (Playlist, 
 }
 
 func (s *SQLiteStorage) GetPlaylistsMetaFromUser(userId string) ([]PlaylistMeta, error) {
-	rows, err := s.db.Query(`SELECT playlist_id, deleted, modified_date FROM playlists WHERE user_id = ?`, userId)
+	rows, err := s.db.Query(`SELECT playlist_id, deleted, modified_date FROM playlist WHERE user_id = ?`, userId)
 	if err != nil {
 		return nil, err
 	}
@@ -77,7 +77,7 @@ func (s *SQLiteStorage) GetPlaylistsMetaFromUser(userId string) ([]PlaylistMeta,
 }
 
 func (s *SQLiteStorage) GetPlaylistsFromUser(userId string) ([]Playlist, error) {
-	rows, err := s.db.Query(`SELECT playlist_id, deleted, title, modified_date, cover_blob FROM playlists WHERE user_id = ?`, userId)
+	rows, err := s.db.Query(`SELECT playlist_id, deleted, title, modified_date, cover_blob FROM playlist WHERE user_id = ?`, userId)
 	if err != nil {
 		return nil, err
 	}
@@ -99,7 +99,7 @@ func (s *SQLiteStorage) GetPlaylistsFromUser(userId string) ([]Playlist, error) 
 }
 
 func (s *SQLiteStorage) DeletePlaylist(userId string, playlistId int64) error {
-	_, err := s.db.Exec(`DELETE FROM playlists WHERE user_id = ? AND playlist_id = ?`, userId, playlistId)
+	_, err := s.db.Exec(`DELETE FROM playlist WHERE user_id = ? AND playlist_id = ?`, userId, playlistId)
 	return err
 }
 
