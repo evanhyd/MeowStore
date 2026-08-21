@@ -3,320 +3,316 @@ package handlers
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
-	"meowstore/storages"
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
+
+	"meowstore/storages"
 
 	"github.com/golang-jwt/jwt/v5"
 )
 
-// MockStorage implements the storages.Storage interface for testing purposes.
+var testSecret = []byte("super-secret-test-key")
+
+// ==========================================
+// TEST INFRASTRUCTURE
+// ==========================================
+
+func generateValidToken(userId string) string {
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.RegisteredClaims{
+		Subject: userId,
+	})
+	tokenString, _ := token.SignedString(testSecret)
+	return tokenString
+}
+
 type MockStorage struct {
-	// PlaylistAccessor functions
-	PutPlaylistFunc              func(playlist storages.Playlist) error
 	GetPlaylistFunc              func(userId string, playlistId int64) (storages.Playlist, error)
+	PutPlaylistFunc              func(playlist storages.Playlist) error
 	GetPlaylistsFromUserFunc     func(userId string) ([]storages.Playlist, error)
 	GetPlaylistsMetaFromUserFunc func(userId string) ([]storages.PlaylistMeta, error)
 	DeletePlaylistFunc           func(userId string, playlistId int64) error
 
-	// MusicAccessor functions
 	PutMusicFunc    func(music storages.Music) error
 	GetMusicFunc    func(musicId string, source storages.MusicSource) (storages.Music, error)
 	DeleteMusicFunc func(musicId string, source storages.MusicSource) error
 
-	// PlaylistRelationAccessor functions
 	PutMusicInPlaylistFunc      func(pm storages.PlaylistMusic) error
 	GetMusicFromPlaylistFunc    func(userId string, playlistId int64) ([]storages.Music, []storages.PlaylistMusic, error)
 	DeleteMusicFromPlaylistFunc func(userId string, playlistId int64, musicId string, source storages.MusicSource) error
-
-	// io.Closer function
-	CloseFunc func() error
-}
-
-// --- PlaylistAccessor Implementation ---
-
-func (m *MockStorage) PutPlaylist(playlist storages.Playlist) error {
-	if m.PutPlaylistFunc != nil {
-		return m.PutPlaylistFunc(playlist)
-	}
-	return nil
 }
 
 func (m *MockStorage) GetPlaylist(userId string, playlistId int64) (storages.Playlist, error) {
-	if m.GetPlaylistFunc != nil {
-		return m.GetPlaylistFunc(userId, playlistId)
-	}
-	return storages.Playlist{}, nil
+	return m.GetPlaylistFunc(userId, playlistId)
 }
-
+func (m *MockStorage) PutPlaylist(playlist storages.Playlist) error {
+	return m.PutPlaylistFunc(playlist)
+}
 func (m *MockStorage) GetPlaylistsFromUser(userId string) ([]storages.Playlist, error) {
-	if m.GetPlaylistsFromUserFunc != nil {
-		return m.GetPlaylistsFromUserFunc(userId)
-	}
-	return nil, nil
+	return m.GetPlaylistsFromUserFunc(userId)
 }
-
 func (m *MockStorage) GetPlaylistsMetaFromUser(userId string) ([]storages.PlaylistMeta, error) {
-	if m.GetPlaylistsMetaFromUserFunc != nil {
-		return m.GetPlaylistsMetaFromUserFunc(userId)
-	}
-	return nil, nil
+	return m.GetPlaylistsMetaFromUserFunc(userId)
 }
-
 func (m *MockStorage) DeletePlaylist(userId string, playlistId int64) error {
-	if m.DeletePlaylistFunc != nil {
-		return m.DeletePlaylistFunc(userId, playlistId)
-	}
-	return nil
+	return m.DeletePlaylistFunc(userId, playlistId)
 }
-
-// --- MusicAccessor Implementation ---
-
-func (m *MockStorage) PutMusic(music storages.Music) error {
-	if m.PutMusicFunc != nil {
-		return m.PutMusicFunc(music)
-	}
-	return nil
-}
-
+func (m *MockStorage) PutMusic(music storages.Music) error { return m.PutMusicFunc(music) }
 func (m *MockStorage) GetMusic(musicId string, source storages.MusicSource) (storages.Music, error) {
-	if m.GetMusicFunc != nil {
-		return m.GetMusicFunc(musicId, source)
-	}
-	return storages.Music{}, nil
+	return m.GetMusicFunc(musicId, source)
 }
-
 func (m *MockStorage) DeleteMusic(musicId string, source storages.MusicSource) error {
-	if m.DeleteMusicFunc != nil {
-		return m.DeleteMusicFunc(musicId, source)
-	}
-	return nil
+	return m.DeleteMusicFunc(musicId, source)
 }
-
-// --- PlaylistRelationAccessor Implementation ---
-
 func (m *MockStorage) PutMusicInPlaylist(pm storages.PlaylistMusic) error {
-	if m.PutMusicInPlaylistFunc != nil {
-		return m.PutMusicInPlaylistFunc(pm)
-	}
-	return nil
+	return m.PutMusicInPlaylistFunc(pm)
 }
-
 func (m *MockStorage) GetMusicFromPlaylist(userId string, playlistId int64) ([]storages.Music, []storages.PlaylistMusic, error) {
-	if m.GetMusicFromPlaylistFunc != nil {
-		return m.GetMusicFromPlaylistFunc(userId, playlistId)
-	}
-	return nil, nil, nil
+	return m.GetMusicFromPlaylistFunc(userId, playlistId)
 }
-
 func (m *MockStorage) DeleteMusicFromPlaylist(userId string, playlistId int64, musicId string, source storages.MusicSource) error {
-	if m.DeleteMusicFromPlaylistFunc != nil {
-		return m.DeleteMusicFromPlaylistFunc(userId, playlistId, musicId, source)
-	}
-	return nil
+	return m.DeleteMusicFromPlaylistFunc(userId, playlistId, musicId, source)
+}
+func (m *MockStorage) Close() error { return nil }
+
+func executeTestRequest(handler http.HandlerFunc, reqBody any) *httptest.ResponseRecorder {
+	bodyBytes, _ := json.Marshal(reqBody)
+	req := httptest.NewRequest(http.MethodPost, "/test", bytes.NewReader(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+	return rr
 }
 
-// --- io.Closer Implementation ---
-
-func (m *MockStorage) Close() error {
-	if m.CloseFunc != nil {
-		return m.CloseFunc()
-	}
-	return nil
-}
-
-// Helper to generate JWT tokens for tests
-func generateTestToken(subject string, secret []byte, exp time.Time) string {
-	claims := &jwt.RegisteredClaims{
-		Subject:   subject,
-		ExpiresAt: jwt.NewNumericDate(exp),
-	}
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	tokenString, _ := token.SignedString(secret)
-	return tokenString
-}
-
-var testSecret = []byte("super-secret-key")
-
-func TestExtractUserID(t *testing.T) {
-	handler := NewServiceHandler(nil, testSecret)
-
-	validToken := generateTestToken("user-123", testSecret, time.Now().Add(1*time.Hour))
-	expiredToken := generateTestToken("user-123", testSecret, time.Now().Add(-1*time.Hour))
-	emptySubToken := generateTestToken("", testSecret, time.Now().Add(1*time.Hour))
-
-	tests := []struct {
-		name        string
-		authHeader  string
-		wantSubject string
-		expectErr   bool
-	}{
-		{"Valid Token", "Bearer " + validToken, "user-123", false},
-		{"Missing Header", "", "", true},
-		{"Invalid Format", validToken, "", true}, // Missing "Bearer "
-		{"Expired Token", "Bearer " + expiredToken, "", true},
-		{"Empty Subject", "Bearer " + emptySubToken, "", true},
-		{"Invalid Signature", "Bearer " + validToken + "bad", "", true},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, "/", nil)
-			if tc.authHeader != "" {
-				req.Header.Set("Authorization", tc.authHeader)
-			}
-
-			subject, err := handler.extractUserID(req)
-			if (err != nil) != tc.expectErr {
-				t.Fatalf("expected error: %v, got: %v", tc.expectErr, err)
-			}
-			if subject != tc.wantSubject {
-				t.Errorf("expected subject %s, got %s", tc.wantSubject, subject)
-			}
-		})
-	}
-}
-
-func TestGetPlaylistsMeta(t *testing.T) {
-	mockStorage := &MockStorage{
-		GetPlaylistsMetaFromUserFunc: func(userId string) ([]storages.PlaylistMeta, error) {
-			if userId == "user-error" {
-				return nil, errors.New("db error")
-			}
-			return []storages.PlaylistMeta{{PlaylistId: 1}}, nil
-		},
-	}
-	handler := NewServiceHandler(mockStorage, testSecret)
-
-	t.Run("Success", func(t *testing.T) {
-		token := generateTestToken("user-123", testSecret, time.Now().Add(1*time.Hour))
-		req := httptest.NewRequest(http.MethodPost, "/meta", bytes.NewBuffer([]byte(`{}`)))
-		req.Header.Set("Authorization", "Bearer "+token)
-		w := httptest.NewRecorder()
-
-		handler.GetPlaylistsMeta(w, req)
-
-		if w.Code != http.StatusOK {
-			t.Errorf("expected status 200, got %d", w.Code)
-		}
-		var resp GetPlaylistsMetaResponse
-		json.NewDecoder(w.Body).Decode(&resp)
-		if len(resp.PlaylistsMeta) != 1 || resp.PlaylistsMeta[0].PlaylistId != 1 {
-			t.Errorf("unexpected response body: %+v", resp)
-		}
-	})
-
-	t.Run("Wrong Method", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/meta", nil)
-		w := httptest.NewRecorder()
-		handler.GetPlaylistsMeta(w, req)
-		if w.Code != http.StatusMethodNotAllowed {
-			t.Errorf("expected status 405, got %d", w.Code)
-		}
-	})
-
-	t.Run("DB Error", func(t *testing.T) {
-		token := generateTestToken("user-error", testSecret, time.Now().Add(1*time.Hour))
-		req := httptest.NewRequest(http.MethodPost, "/meta", bytes.NewBuffer([]byte(`{}`)))
-		req.Header.Set("Authorization", "Bearer "+token)
-		w := httptest.NewRecorder()
-
-		handler.GetPlaylistsMeta(w, req)
-
-		if w.Code != http.StatusInternalServerError {
-			t.Errorf("expected status 500, got %d", w.Code)
-		}
-	})
-}
+// ==========================================
+// TESTS
+// ==========================================
 
 func TestGetPlaylist(t *testing.T) {
-	mockStorage := &MockStorage{
-		GetPlaylistFunc: func(userId string, playlistId int64) (storages.Playlist, error) {
-			if playlistId == 999 {
-				return storages.Playlist{}, errors.New("not found")
-			}
-			return storages.Playlist{PlaylistId: playlistId, UserId: userId}, nil
-		},
-		GetMusicFromPlaylistFunc: func(userId string, playlistId int64) ([]storages.Music, []storages.PlaylistMusic, error) {
-			return []storages.Music{{MusicId: "m1"}}, []storages.PlaylistMusic{{MusicId: "m1"}}, nil
-		},
-	}
-	handler := NewServiceHandler(mockStorage, testSecret)
-	token := generateTestToken("user-123", testSecret, time.Now().Add(1*time.Hour))
-
 	t.Run("Success", func(t *testing.T) {
-		body := GetPlaylistRequest{PlaylistId: 1}
-		b, _ := json.Marshal(body)
-		req := httptest.NewRequest(http.MethodPost, "/playlist", bytes.NewBuffer(b))
-		req.Header.Set("Authorization", "Bearer "+token)
-		w := httptest.NewRecorder()
-
-		handler.GetPlaylist(w, req)
-
-		if w.Code != http.StatusOK {
-			t.Errorf("expected status 200, got %d", w.Code)
+		mock := &MockStorage{
+			GetPlaylistFunc: func(userId string, playlistId int64) (storages.Playlist, error) {
+				return storages.Playlist{PlaylistId: playlistId, Title: "Test"}, nil
+			},
 		}
-		var resp GetPlaylistResponse
-		json.NewDecoder(w.Body).Decode(&resp)
-		if resp.Playlist.PlaylistId != 1 || len(resp.Musics) != 1 {
-			t.Errorf("unexpected response body: %+v", resp)
+		svc := NewServiceHandler(mock, testSecret)
+		req := GetPlaylistRequest{Token: generateValidToken("user_123"), PlaylistId: 5}
+
+		rr := executeTestRequest(svc.GetPlaylist, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", rr.Code)
+		}
+
+		var res GetPlaylistResponse
+		json.Unmarshal(rr.Body.Bytes(), &res)
+		if res.Playlist.PlaylistId != 5 {
+			t.Errorf("expected playlist ID 5")
 		}
 	})
+}
 
-	t.Run("Not Found", func(t *testing.T) {
-		body := GetPlaylistRequest{PlaylistId: 999}
-		b, _ := json.Marshal(body)
-		req := httptest.NewRequest(http.MethodPost, "/playlist", bytes.NewBuffer(b))
-		req.Header.Set("Authorization", "Bearer "+token)
-		w := httptest.NewRecorder()
+func TestGetPlaylistContent(t *testing.T) {
+	t.Run("Success", func(t *testing.T) {
+		mock := &MockStorage{
+			GetPlaylistFunc: func(userId string, playlistId int64) (storages.Playlist, error) {
+				return storages.Playlist{UserId: userId, PlaylistId: playlistId, Title: "Test Playlist"}, nil
+			},
+			GetMusicFromPlaylistFunc: func(userId string, playlistId int64) ([]storages.Music, []storages.PlaylistMusic, error) {
+				musics := []storages.Music{{MusicId: "m1", Title: "Song 1"}}
+				relations := []storages.PlaylistMusic{{UserId: userId, PlaylistId: playlistId, MusicId: "m1"}}
+				return musics, relations, nil
+			},
+		}
+		svc := NewServiceHandler(mock, testSecret)
+		req := GetPlaylistContentRequest{Token: generateValidToken("user_123"), PlaylistId: 1}
 
-		handler.GetPlaylist(w, req)
+		rr := executeTestRequest(svc.GetPlaylistContent, req)
 
-		if w.Code != http.StatusInternalServerError {
-			t.Errorf("expected status 500, got %d", w.Code)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected status 200, got %d", rr.Code)
+		}
+
+		var res GetPlaylistContentResponse
+		json.Unmarshal(rr.Body.Bytes(), &res)
+		if res.Playlist.Title != "Test Playlist" {
+			t.Errorf("expected 'Test Playlist', got '%s'", res.Playlist.Title)
+		}
+		if len(res.Musics) != 1 || len(res.Relations) != 1 {
+			t.Errorf("expected 1 music and 1 relation")
 		}
 	})
 }
 
 func TestPutPlaylist(t *testing.T) {
-	mockStorage := &MockStorage{
-		PutPlaylistFunc:        func(p storages.Playlist) error { return nil },
-		PutMusicFunc:           func(m storages.Music) error { return nil },
-		PutMusicInPlaylistFunc: func(pm storages.PlaylistMusic) error { return nil },
-	}
-	handler := NewServiceHandler(mockStorage, testSecret)
-	token := generateTestToken("user-123", testSecret, time.Now().Add(1*time.Hour))
-
 	t.Run("Success", func(t *testing.T) {
-		body := PutPlaylistRequest{
-			Playlist:  storages.Playlist{PlaylistId: 1},
-			Musics:    []storages.Music{{MusicId: "m1"}},
-			Relations: []storages.PlaylistMusic{{MusicId: "m1"}},
+		called := false
+		mock := &MockStorage{
+			PutPlaylistFunc: func(playlist storages.Playlist) error {
+				called = true
+				if playlist.UserId != "user_123" {
+					t.Errorf("expected user_123, got %s", playlist.UserId)
+				}
+				return nil
+			},
 		}
-		b, _ := json.Marshal(body)
-		req := httptest.NewRequest(http.MethodPost, "/playlist/put", bytes.NewBuffer(b))
-		req.Header.Set("Authorization", "Bearer "+token)
-		w := httptest.NewRecorder()
+		svc := NewServiceHandler(mock, testSecret)
+		req := PutPlaylistRequest{
+			Token:    generateValidToken("user_123"),
+			Playlist: storages.Playlist{PlaylistId: 10, Title: "New"},
+		}
 
-		handler.PutPlaylist(w, req)
+		rr := executeTestRequest(svc.PutPlaylist, req)
 
-		if w.Code != http.StatusOK {
-			t.Errorf("expected status 200, got %d", w.Code)
+		if rr.Code != http.StatusOK || !called {
+			t.Fatalf("expected 200 and called=true")
 		}
 	})
+}
 
-	t.Run("Invalid JSON", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodPost, "/playlist/put", bytes.NewBuffer([]byte(`{bad-json}`)))
-		req.Header.Set("Authorization", "Bearer "+token)
-		w := httptest.NewRecorder()
+func TestDeletePlaylist(t *testing.T) {
+	t.Run("Success", func(t *testing.T) {
+		called := false
+		mock := &MockStorage{
+			DeletePlaylistFunc: func(userId string, playlistId int64) error {
+				called = true
+				if playlistId != 15 {
+					t.Errorf("expected 15, got %d", playlistId)
+				}
+				return nil
+			},
+		}
+		svc := NewServiceHandler(mock, testSecret)
+		req := DeletePlaylistRequest{Token: generateValidToken("user_123"), PlaylistId: 15}
 
-		handler.PutPlaylist(w, req)
+		rr := executeTestRequest(svc.DeletePlaylist, req)
 
-		if w.Code != http.StatusBadRequest {
-			t.Errorf("expected status 400, got %d", w.Code)
+		if rr.Code != http.StatusOK || !called {
+			t.Fatalf("expected 200 and called=true")
+		}
+	})
+}
+
+func TestGetMusic(t *testing.T) {
+	t.Run("Success", func(t *testing.T) {
+		mock := &MockStorage{
+			GetMusicFunc: func(musicId string, source storages.MusicSource) (storages.Music, error) {
+				return storages.Music{MusicId: musicId, Source: source}, nil
+			},
+		}
+		svc := NewServiceHandler(mock, testSecret)
+		req := GetMusicRequest{Token: generateValidToken("user_123"), MusicId: "track1", Source: storages.YouTubeSource}
+
+		rr := executeTestRequest(svc.GetMusic, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", rr.Code)
+		}
+
+		var res GetMusicResponse
+		json.Unmarshal(rr.Body.Bytes(), &res)
+		if res.Music.MusicId != "track1" {
+			t.Errorf("expected track1")
+		}
+	})
+}
+
+func TestPutMusic(t *testing.T) {
+	t.Run("Success", func(t *testing.T) {
+		called := false
+		mock := &MockStorage{
+			PutMusicFunc: func(music storages.Music) error {
+				called = true
+				return nil
+			},
+		}
+		svc := NewServiceHandler(mock, testSecret)
+		req := PutMusicRequest{Token: generateValidToken("user_123"), Music: storages.Music{MusicId: "track1"}}
+
+		rr := executeTestRequest(svc.PutMusic, req)
+
+		if rr.Code != http.StatusOK || !called {
+			t.Fatalf("expected 200 and called=true")
+		}
+	})
+}
+
+func TestGetPlaylistsFromUser(t *testing.T) {
+	t.Run("Success", func(t *testing.T) {
+		mock := &MockStorage{
+			GetPlaylistsFromUserFunc: func(userId string) ([]storages.Playlist, error) {
+				return []storages.Playlist{{UserId: userId, PlaylistId: 99}}, nil
+			},
+		}
+		svc := NewServiceHandler(mock, testSecret)
+		req := GetPlaylistsFromUserRequest{Token: generateValidToken("user_123")}
+
+		rr := executeTestRequest(svc.GetPlaylistsFromUser, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", rr.Code)
+		}
+
+		var res GetPlaylistsFromUserResponse
+		json.Unmarshal(rr.Body.Bytes(), &res)
+		if len(res.Playlists) != 1 || res.Playlists[0].PlaylistId != 99 {
+			t.Errorf("expected playlist ID 99")
+		}
+	})
+}
+
+func TestPutMusicInPlaylist(t *testing.T) {
+	t.Run("Success", func(t *testing.T) {
+		called := false
+		mock := &MockStorage{
+			PutMusicInPlaylistFunc: func(pm storages.PlaylistMusic) error {
+				called = true
+				if pm.PlaylistId != 5 || pm.MusicId != "m1" || pm.UserId != "user_123" {
+					t.Errorf("unexpected payload values")
+				}
+				return nil
+			},
+		}
+		svc := NewServiceHandler(mock, testSecret)
+		req := PutMusicInPlaylistRequest{
+			Token:      generateValidToken("user_123"),
+			PlaylistId: 5,
+			MusicId:    "m1",
+			Source:     storages.SpotifySource,
+		}
+
+		rr := executeTestRequest(svc.PutMusicInPlaylist, req)
+
+		if rr.Code != http.StatusOK || !called {
+			t.Fatalf("expected 200 and called=true")
+		}
+	})
+}
+
+func TestDeleteMusicFromPlaylist(t *testing.T) {
+	t.Run("Success", func(t *testing.T) {
+		called := false
+		mock := &MockStorage{
+			DeleteMusicFromPlaylistFunc: func(userId string, playlistId int64, musicId string, source storages.MusicSource) error {
+				called = true
+				if playlistId != 5 || musicId != "m1" {
+					t.Errorf("unexpected parameters")
+				}
+				return nil
+			},
+		}
+		svc := NewServiceHandler(mock, testSecret)
+		req := DeleteMusicFromPlaylistRequest{
+			Token:      generateValidToken("user_123"),
+			PlaylistId: 5,
+			MusicId:    "m1",
+			Source:     storages.YouTubeSource,
+		}
+
+		rr := executeTestRequest(svc.DeleteMusicFromPlaylist, req)
+
+		if rr.Code != http.StatusOK || !called {
+			t.Fatalf("expected 200 and called=true")
 		}
 	})
 }

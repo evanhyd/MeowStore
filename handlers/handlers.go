@@ -3,10 +3,9 @@ package handlers
 import (
 	"encoding/json"
 	"errors"
-	"io"
-	"meowstore/storages"
 	"net/http"
-	"strings"
+
+	"meowstore/storages"
 
 	"github.com/golang-jwt/jwt/v5"
 )
@@ -20,20 +19,12 @@ func NewServiceHandler(storage storages.Storage, secret []byte) *ServiceHandler 
 	return &ServiceHandler{storage: storage, jwtSecret: secret}
 }
 
-func (h *ServiceHandler) extractUserID(r *http.Request) (string, error) {
-	authHeader := r.Header.Get("Authorization")
-	if authHeader == "" {
-		return "", errors.New("missing authorization header")
+// Parses the JWT and returns the subject (userId).
+func (h *ServiceHandler) validateToken(tokenString string) (string, error) {
+	if tokenString == "" {
+		return "", errors.New("missing token in request body")
 	}
 
-	parts := strings.Split(authHeader, " ")
-	if len(parts) != 2 || strings.ToLower(parts[0]) != "bearer" {
-		return "", errors.New("invalid authorization header format")
-	}
-
-	tokenString := parts[1]
-
-	// jwt.ParseWithClaims automatically validates the expiration date if present in RegisteredClaims
 	token, err := jwt.ParseWithClaims(tokenString, &jwt.RegisteredClaims{}, func(token *jwt.Token) (any, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, errors.New("unexpected signing method")
@@ -55,65 +46,66 @@ func (h *ServiceHandler) extractUserID(r *http.Request) (string, error) {
 	return "", errors.New("invalid token")
 }
 
-func (h *ServiceHandler) GetPlaylistsMeta(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		sendError(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	userId, err := h.extractUserID(r)
-	if err != nil {
-		sendError(w, "Unauthorized: "+err.Error(), http.StatusUnauthorized)
-		return
-	}
-
-	// Decode the body for consistency, ignoring EOF if the body is completely empty
-	var req GetPlaylistsMetaRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
-		sendError(w, "Invalid request body", http.StatusBadRequest)
-		return
-	}
-
-	metas, err := h.storage.GetPlaylistsMetaFromUser(userId)
-	if err != nil {
-		sendError(w, "Database error", http.StatusInternalServerError)
-		return
-	}
-
-	if metas == nil {
-		metas = []storages.PlaylistMeta{}
-	}
-
-	sendJSON(w, http.StatusOK, GetPlaylistsMetaResponse{PlaylistsMeta: metas})
-}
+// ==========================================
+// PLAYLIST HANDLERS
+// ==========================================
 
 func (h *ServiceHandler) GetPlaylist(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		sendError(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	userId, err := h.extractUserID(r)
-	if err != nil {
-		sendError(w, "Unauthorized: "+err.Error(), http.StatusUnauthorized)
+		sendError(w, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
 
 	var req GetPlaylistRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		sendError(w, "Invalid request body", http.StatusBadRequest)
+		sendError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	userId, err := h.validateToken(req.Token)
+	if err != nil {
+		sendError(w, http.StatusUnauthorized, "Unauthorized: "+err.Error())
 		return
 	}
 
 	playlist, err := h.storage.GetPlaylist(userId, req.PlaylistId)
 	if err != nil {
-		sendError(w, "Playlist not found or database error", http.StatusInternalServerError)
+		sendError(w, http.StatusInternalServerError, "Playlist not found")
 		return
 	}
 
+	sendJSON(w, http.StatusOK, GetPlaylistResponse{Playlist: playlist})
+}
+
+func (h *ServiceHandler) GetPlaylistContent(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		sendError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	var req GetPlaylistContentRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		sendError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	userId, err := h.validateToken(req.Token)
+	if err != nil {
+		sendError(w, http.StatusUnauthorized, "Unauthorized: "+err.Error())
+		return
+	}
+
+	// 1. Get the playlist base data
+	playlist, err := h.storage.GetPlaylist(userId, req.PlaylistId)
+	if err != nil {
+		sendError(w, http.StatusInternalServerError, "Playlist not found")
+		return
+	}
+
+	// 2. Get the populated tracks and relations
 	musics, relations, err := h.storage.GetMusicFromPlaylist(userId, req.PlaylistId)
 	if err != nil {
-		sendError(w, "Failed to retrieve music", http.StatusInternalServerError)
+		sendError(w, http.StatusInternalServerError, "Failed to retrieve music")
 		return
 	}
 
@@ -124,7 +116,7 @@ func (h *ServiceHandler) GetPlaylist(w http.ResponseWriter, r *http.Request) {
 		relations = []storages.PlaylistMusic{}
 	}
 
-	sendJSON(w, http.StatusOK, GetPlaylistResponse{
+	sendJSON(w, http.StatusOK, GetPlaylistContentResponse{
 		Playlist:  playlist,
 		Musics:    musics,
 		Relations: relations,
@@ -133,43 +125,203 @@ func (h *ServiceHandler) GetPlaylist(w http.ResponseWriter, r *http.Request) {
 
 func (h *ServiceHandler) PutPlaylist(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		sendError(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	userId, err := h.extractUserID(r)
-	if err != nil {
-		sendError(w, "Unauthorized: "+err.Error(), http.StatusUnauthorized)
+		sendError(w, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
 
 	var req PutPlaylistRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		sendError(w, "Invalid request body", http.StatusBadRequest)
+		sendError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	userId, err := h.validateToken(req.Token)
+	if err != nil {
+		sendError(w, http.StatusUnauthorized, "Unauthorized: "+err.Error())
 		return
 	}
 
 	req.Playlist.UserId = userId
 	if err := h.storage.PutPlaylist(req.Playlist); err != nil {
-		sendError(w, "Failed to save playlist", http.StatusInternalServerError)
+		sendError(w, http.StatusInternalServerError, "Failed to save playlist")
 		return
 	}
 
-	for _, music := range req.Musics {
-		if err := h.storage.PutMusic(music); err != nil {
-			sendError(w, "Failed to save music", http.StatusInternalServerError)
-			return
-		}
+	sendJSON(w, http.StatusOK, PutPlaylistResponse{Playlist: req.Playlist})
+}
+
+func (h *ServiceHandler) DeletePlaylist(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		sendError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
 	}
 
-	for _, relation := range req.Relations {
-		relation.UserId = userId
-		relation.PlaylistId = req.Playlist.PlaylistId
-		if err := h.storage.PutMusicInPlaylist(relation); err != nil {
-			sendError(w, "Failed to save playlist relation", http.StatusInternalServerError)
-			return
-		}
+	var req DeletePlaylistRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		sendError(w, http.StatusBadRequest, "Invalid request body")
+		return
 	}
 
-	sendJSON(w, http.StatusOK, PutPlaylistResponse{})
+	userId, err := h.validateToken(req.Token)
+	if err != nil {
+		sendError(w, http.StatusUnauthorized, "Unauthorized: "+err.Error())
+		return
+	}
+
+	if err := h.storage.DeletePlaylist(userId, req.PlaylistId); err != nil {
+		sendError(w, http.StatusInternalServerError, "Failed to delete playlist")
+		return
+	}
+
+	sendJSON(w, http.StatusOK, DeletePlaylistResponse{})
+}
+
+// ==========================================
+// MUSIC HANDLERS
+// ==========================================
+
+func (h *ServiceHandler) GetMusic(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		sendError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	var req GetMusicRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		sendError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if _, err := h.validateToken(req.Token); err != nil {
+		sendError(w, http.StatusUnauthorized, "Unauthorized: "+err.Error())
+		return
+	}
+
+	music, err := h.storage.GetMusic(req.MusicId, req.Source)
+	if err != nil {
+		sendError(w, http.StatusInternalServerError, "Music not found")
+		return
+	}
+
+	sendJSON(w, http.StatusOK, GetMusicResponse{Music: music})
+}
+
+func (h *ServiceHandler) PutMusic(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		sendError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	var req PutMusicRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		sendError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if _, err := h.validateToken(req.Token); err != nil {
+		sendError(w, http.StatusUnauthorized, "Unauthorized: "+err.Error())
+		return
+	}
+
+	if err := h.storage.PutMusic(req.Music); err != nil {
+		sendError(w, http.StatusInternalServerError, "Failed to save music entity")
+		return
+	}
+
+	sendJSON(w, http.StatusOK, PutMusicResponse{})
+}
+
+// ==========================================
+// PLAYLIST RELATION HANDLERS
+// ==========================================
+
+func (h *ServiceHandler) GetPlaylistsFromUser(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		sendError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	var req GetPlaylistsFromUserRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		sendError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	userId, err := h.validateToken(req.Token)
+	if err != nil {
+		sendError(w, http.StatusUnauthorized, "Unauthorized: "+err.Error())
+		return
+	}
+
+	playlists, err := h.storage.GetPlaylistsFromUser(userId)
+	if err != nil {
+		sendError(w, http.StatusInternalServerError, "Failed to fetch playlists")
+		return
+	}
+
+	if playlists == nil {
+		playlists = []storages.Playlist{}
+	}
+
+	sendJSON(w, http.StatusOK, GetPlaylistsFromUserResponse{Playlists: playlists})
+}
+
+func (h *ServiceHandler) PutMusicInPlaylist(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		sendError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	var req PutMusicInPlaylistRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		sendError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	userId, err := h.validateToken(req.Token)
+	if err != nil {
+		sendError(w, http.StatusUnauthorized, "Unauthorized: "+err.Error())
+		return
+	}
+
+	relation := storages.PlaylistMusic{
+		UserId:     userId,
+		PlaylistId: req.PlaylistId,
+		MusicId:    req.MusicId,
+		Source:     req.Source,
+		AddedAt:    req.AddedAt,
+	}
+
+	if err := h.storage.PutMusicInPlaylist(relation); err != nil {
+		sendError(w, http.StatusInternalServerError, "Failed to save playlist relation")
+		return
+	}
+
+	sendJSON(w, http.StatusOK, PutMusicInPlaylistResponse{})
+}
+
+func (h *ServiceHandler) DeleteMusicFromPlaylist(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		sendError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	var req DeleteMusicFromPlaylistRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		sendError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	userId, err := h.validateToken(req.Token)
+	if err != nil {
+		sendError(w, http.StatusUnauthorized, "Unauthorized: "+err.Error())
+		return
+	}
+
+	if err := h.storage.DeleteMusicFromPlaylist(userId, req.PlaylistId, req.MusicId, req.Source); err != nil {
+		sendError(w, http.StatusInternalServerError, "Failed to delete music from playlist")
+		return
+	}
+
+	sendJSON(w, http.StatusOK, DeleteMusicFromPlaylistResponse{})
 }

@@ -1,6 +1,6 @@
 package storages
 
-type MusicSource int64
+type MusicSource = int64
 
 const (
 	UnknownSource MusicSource = iota
@@ -9,35 +9,32 @@ const (
 )
 
 type PlaylistMeta struct {
-	UserId       string
-	PlaylistId   int64
-	Deleted      bool
-	ModifiedDate int64 // Unix nano
+	UserId       string `db:"user_id" json:"userId"`
+	PlaylistId   int64  `db:"playlist_id" json:"playlistId"`
+	Deleted      bool   `db:"deleted" json:"deleted"`
+	ModifiedDate int64  `db:"modified_date" json:"modifiedDate"` // Unix nano
 }
 
-// Playlist table
 type Playlist struct {
-	UserId       string
-	PlaylistId   int64
-	Deleted      bool
-	ModifiedDate int64 // Unix nano
-	Title        string
-	CoverBlob    []byte
+	UserId       string `db:"user_id" json:"userId"`
+	PlaylistId   int64  `db:"playlist_id" json:"playlistId"`
+	Deleted      bool   `db:"deleted" json:"deleted"`
+	Title        string `db:"title" json:"title"`
+	ModifiedDate int64  `db:"modified_date" json:"modifiedDate"`
+	CoverBlob    []byte `db:"cover_blob" json:"coverBlob"`
 }
 
-// Music table
 type Music struct {
-	MusicId       string
-	Source        MusicSource
-	Title         string
-	LengthSeconds int64
+	MusicId       string      `db:"music_id" json:"musicId"`
+	Source        MusicSource `db:"source" json:"source"`
+	Title         string      `db:"title" json:"title"`
+	LengthSeconds int64       `db:"length_seconds" json:"lengthSeconds"`
 }
 
-// PlaylistMusic table
 type PlaylistMusic struct {
-	UserId     string
-	PlaylistId int64
-	MusicId    string
-	Source     MusicSource
-	AddedAt    int64 // Unix nano
+	UserId     string `db:"user_id" json:"userId"`
+	PlaylistId int64  `db:"playlist_id" json:"playlistId"`
+	MusicId    string `db:"music_id" json:"musicId"`
+	Source     int64  `db:"source" json:"source"`
+	AddedAt    int64  `db:"added_at" json:"addedAt"`
 }

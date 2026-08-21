@@ -38,9 +38,15 @@ func main() {
 
 	// Start the server.
 	mux := http.NewServeMux()
-	mux.HandleFunc("/playlist/meta", service.GetPlaylistsMeta)
-	mux.HandleFunc("/playlist/get", service.GetPlaylist)
-	mux.HandleFunc("/playlist/put", service.PutPlaylist)
+	mux.HandleFunc("POST /api/getPlaylist", service.GetPlaylist)
+	mux.HandleFunc("POST /api/getPlaylistContent", service.GetPlaylistContent)
+	mux.HandleFunc("POST /api/putPlaylist", service.PutPlaylist)
+	mux.HandleFunc("POST /api/deletePlaylist", service.DeletePlaylist)
+	mux.HandleFunc("POST /api/getMusic", service.GetMusic)
+	mux.HandleFunc("POST /api/putMusic", service.PutMusic)
+	mux.HandleFunc("POST /api/getPlaylistsFromUser", service.GetPlaylistsFromUser)
+	mux.HandleFunc("POST /api/putMusicInPlaylist", service.PutMusicInPlaylist)
+	mux.HandleFunc("POST /api/deleteMusicFromPlaylist", service.DeleteMusicFromPlaylist)
 
 	addr := ":" + *portFlag
 	slog.Info("Server is starting", "port", *portFlag)
