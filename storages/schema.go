@@ -8,13 +8,6 @@ const (
 	SpotifySource
 )
 
-type PlaylistMeta struct {
-	UserId       string `db:"user_id" json:"userId"`
-	PlaylistId   int64  `db:"playlist_id" json:"playlistId"`
-	Deleted      bool   `db:"deleted" json:"deleted"`
-	ModifiedDate int64  `db:"modified_date" json:"modifiedDate"` // Unix nano
-}
-
 type Playlist struct {
 	UserId       string `db:"user_id" json:"userId"`
 	PlaylistId   int64  `db:"playlist_id" json:"playlistId"`

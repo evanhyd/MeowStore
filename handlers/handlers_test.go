@@ -27,11 +27,10 @@ func generateValidToken(userId string) string {
 }
 
 type MockStorage struct {
-	GetPlaylistFunc              func(userId string, playlistId int64) (storages.Playlist, error)
-	PutPlaylistFunc              func(playlist storages.Playlist) error
-	GetPlaylistsFromUserFunc     func(userId string) ([]storages.Playlist, error)
-	GetPlaylistsMetaFromUserFunc func(userId string) ([]storages.PlaylistMeta, error)
-	DeletePlaylistFunc           func(userId string, playlistId int64) error
+	GetPlaylistFunc          func(userId string, playlistId int64) (storages.Playlist, error)
+	PutPlaylistFunc          func(playlist storages.Playlist) error
+	GetPlaylistsFromUserFunc func(userId string) ([]storages.Playlist, error)
+	DeletePlaylistFunc       func(userId string, playlistId int64) error
 
 	PutMusicFunc    func(music storages.Music) error
 	GetMusicFunc    func(musicId string, source storages.MusicSource) (storages.Music, error)
@@ -50,9 +49,6 @@ func (m *MockStorage) PutPlaylist(playlist storages.Playlist) error {
 }
 func (m *MockStorage) GetPlaylistsFromUser(userId string) ([]storages.Playlist, error) {
 	return m.GetPlaylistsFromUserFunc(userId)
-}
-func (m *MockStorage) GetPlaylistsMetaFromUser(userId string) ([]storages.PlaylistMeta, error) {
-	return m.GetPlaylistsMetaFromUserFunc(userId)
 }
 func (m *MockStorage) DeletePlaylist(userId string, playlistId int64) error {
 	return m.DeletePlaylistFunc(userId, playlistId)

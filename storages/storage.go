@@ -12,7 +12,6 @@ type PlaylistAccessor interface {
 	PutPlaylist(playlist Playlist) error
 	GetPlaylist(userId string, playlistId int64) (Playlist, error)
 	GetPlaylistsFromUser(userId string) ([]Playlist, error)
-	GetPlaylistsMetaFromUser(userId string) ([]PlaylistMeta, error)
 	DeletePlaylist(userId string, playlistId int64) error
 }
 

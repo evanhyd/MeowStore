@@ -11,7 +11,7 @@ import (
 //go:embed schema.sql
 var schemaSQL string
 
-var _ Storage = &SQLiteStorage{}
+var _ Storage = (*SQLiteStorage)(nil)
 
 type SQLiteStorage struct {
 	db *sql.DB
@@ -54,28 +54,6 @@ func (s *SQLiteStorage) GetPlaylist(userId string, playlistId int64) (Playlist, 
 	return playlist, nil
 }
 
-func (s *SQLiteStorage) GetPlaylistsMetaFromUser(userId string) ([]PlaylistMeta, error) {
-	rows, err := s.db.Query(`SELECT playlist_id, deleted, modified_date FROM playlist WHERE user_id = ?`, userId)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var playlistMetas []PlaylistMeta
-	for rows.Next() {
-		p := PlaylistMeta{UserId: userId}
-		if err := rows.Scan(&p.PlaylistId, &p.Deleted, &p.ModifiedDate); err != nil {
-			return nil, err
-		}
-		playlistMetas = append(playlistMetas, p)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return playlistMetas, nil
-}
-
 func (s *SQLiteStorage) GetPlaylistsFromUser(userId string) ([]Playlist, error) {
 	rows, err := s.db.Query(`SELECT playlist_id, deleted, title, modified_date, cover_blob FROM playlist WHERE user_id = ?`, userId)
 	if err != nil {
@@ -83,7 +61,7 @@ func (s *SQLiteStorage) GetPlaylistsFromUser(userId string) ([]Playlist, error) 
 	}
 	defer rows.Close()
 
-	var playlists []Playlist
+	playlists := []Playlist{}
 	for rows.Next() {
 		p := Playlist{UserId: userId}
 		if err := rows.Scan(&p.PlaylistId, &p.Deleted, &p.Title, &p.ModifiedDate, &p.CoverBlob); err != nil {
@@ -143,8 +121,8 @@ func (s *SQLiteStorage) GetMusicFromPlaylist(userId string, playlistId int64) ([
 	}
 	defer rows.Close()
 
-	var musics []Music
-	var playlistMusics []PlaylistMusic
+	musics := []Music{}
+	playlistMusics := []PlaylistMusic{}
 
 	for rows.Next() {
 		var m Music
