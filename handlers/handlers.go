@@ -231,6 +231,33 @@ func (h *ServiceHandler) PutMusic(w http.ResponseWriter, r *http.Request) {
 	sendJSON(w, http.StatusOK, PutMusicResponse{})
 }
 
+func (h *ServiceHandler) PutMusicBulk(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		sendError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	var req PutMusicBulkRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		sendError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if _, err := h.validateToken(req.Token); err != nil {
+		sendError(w, http.StatusUnauthorized, "Unauthorized: "+err.Error())
+		return
+	}
+
+	for i := range req.Music {
+		if err := h.storage.PutMusic(req.Music[i]); err != nil {
+			sendError(w, http.StatusInternalServerError, "Failed to save music entity")
+			return
+		}
+	}
+
+	sendJSON(w, http.StatusOK, PutMusicBulkResponse{})
+}
+
 // ==========================================
 // PLAYLIST RELATION HANDLERS
 // ==========================================
@@ -298,6 +325,34 @@ func (h *ServiceHandler) PutMusicInPlaylist(w http.ResponseWriter, r *http.Reque
 	}
 
 	sendJSON(w, http.StatusOK, PutMusicInPlaylistResponse{})
+}
+
+func (h *ServiceHandler) PutMusicInPlaylistBulk(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		sendError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	var req PutMusicInPlaylistBulkRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		sendError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	_, err := h.validateToken(req.Token)
+	if err != nil {
+		sendError(w, http.StatusUnauthorized, "Unauthorized: "+err.Error())
+		return
+	}
+
+	for i := range req.Relations {
+		if err := h.storage.PutMusicInPlaylist(req.Relations[i]); err != nil {
+			sendError(w, http.StatusInternalServerError, "Failed to save playlist relation")
+			return
+		}
+	}
+
+	sendJSON(w, http.StatusOK, PutMusicInPlaylistBulkResponse{})
 }
 
 func (h *ServiceHandler) DeleteMusicFromPlaylist(w http.ResponseWriter, r *http.Request) {

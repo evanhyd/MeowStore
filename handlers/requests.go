@@ -65,6 +65,14 @@ type PutMusicRequest struct {
 type PutMusicResponse struct {
 }
 
+// PutMusicBulk
+type PutMusicBulkRequest struct {
+	Token string           `json:"token"`
+	Music []storages.Music `json:"music"`
+}
+type PutMusicBulkResponse struct {
+}
+
 // GetPlaylistsFromUser
 type GetPlaylistsFromUserRequest struct {
 	Token string `json:"token"`
@@ -91,6 +99,14 @@ type PutMusicInPlaylistRequest struct {
 	AddedAt    int64                `json:"addedAt"` // unix nano
 }
 type PutMusicInPlaylistResponse struct {
+}
+
+// PutMusicInPlaylistBulk
+type PutMusicInPlaylistBulkRequest struct {
+	Token     string                   `json:"token"`
+	Relations []storages.PlaylistMusic `json:"relations"`
+}
+type PutMusicInPlaylistBulkResponse struct {
 }
 
 // DeleteMusicFromPlaylist

@@ -44,8 +44,10 @@ func main() {
 	mux.HandleFunc("POST /api/deletePlaylist", service.DeletePlaylist)
 	mux.HandleFunc("POST /api/getMusic", service.GetMusic)
 	mux.HandleFunc("POST /api/putMusic", service.PutMusic)
+	mux.HandleFunc("POST /api/putMusicBulk", service.PutMusicBulk)
 	mux.HandleFunc("POST /api/getPlaylistsFromUser", service.GetPlaylistsFromUser)
 	mux.HandleFunc("POST /api/putMusicInPlaylist", service.PutMusicInPlaylist)
+	mux.HandleFunc("POST /api/putMusicInPlaylistBulk", service.PutMusicInPlaylistBulk)
 	mux.HandleFunc("POST /api/deleteMusicFromPlaylist", service.DeleteMusicFromPlaylist)
 
 	addr := ":" + *portFlag
