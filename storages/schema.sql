@@ -3,7 +3,6 @@ PRAGMA foreign_keys = ON;
 CREATE TABLE IF NOT EXISTS playlist (
     user_id TEXT,
     playlist_id INTEGER,
-    deleted BOOLEAN NOT NULL,
     title TEXT NOT NULL,
     modified_date INTEGER NOT NULL,  -- Unix nano
     cover_blob BLOB NOT NULL,

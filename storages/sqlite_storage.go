@@ -38,24 +38,24 @@ func (s *SQLiteStorage) Close() error {
 }
 
 func (s *SQLiteStorage) PutPlaylist(playlist Playlist) error {
-	_, err := s.db.Exec(`INSERT INTO playlist(user_id, playlist_id, deleted, title, modified_date, cover_blob) VALUES (?, ?, ?, ?, ?, ?) 
-	ON CONFLICT (user_id, playlist_id) DO UPDATE SET deleted = excluded.deleted, title = excluded.title, modified_date = excluded.modified_date, cover_blob = excluded.cover_blob`,
-		playlist.UserId, playlist.PlaylistId, playlist.Deleted, playlist.Title, playlist.ModifiedDate, playlist.CoverBlob)
+	_, err := s.db.Exec(`INSERT INTO playlist(user_id, playlist_id, title, modified_date, cover_blob) VALUES (?, ?, ?, ?, ?) 
+	ON CONFLICT (user_id, playlist_id) DO UPDATE SET title = excluded.title, modified_date = excluded.modified_date, cover_blob = excluded.cover_blob`,
+		playlist.UserId, playlist.PlaylistId, playlist.Title, playlist.ModifiedDate, playlist.CoverBlob)
 	return err
 }
 
 func (s *SQLiteStorage) GetPlaylist(userId string, playlistId int64) (Playlist, error) {
-	row := s.db.QueryRow(`SELECT deleted, title, modified_date, cover_blob FROM playlist WHERE user_id = ? AND playlist_id = ?`, userId, playlistId)
+	row := s.db.QueryRow(`SELECT title, modified_date, cover_blob FROM playlist WHERE user_id = ? AND playlist_id = ?`, userId, playlistId)
 
 	playlist := Playlist{UserId: userId, PlaylistId: playlistId}
-	if err := row.Scan(&playlist.Deleted, &playlist.Title, &playlist.ModifiedDate, &playlist.CoverBlob); err != nil {
+	if err := row.Scan(&playlist.Title, &playlist.ModifiedDate, &playlist.CoverBlob); err != nil {
 		return Playlist{}, err
 	}
 	return playlist, nil
 }
 
 func (s *SQLiteStorage) GetPlaylistsFromUser(userId string) ([]Playlist, error) {
-	rows, err := s.db.Query(`SELECT playlist_id, deleted, title, modified_date, cover_blob FROM playlist WHERE user_id = ?`, userId)
+	rows, err := s.db.Query(`SELECT playlist_id, title, modified_date, cover_blob FROM playlist WHERE user_id = ?`, userId)
 	if err != nil {
 		return nil, err
 	}
@@ -64,7 +64,7 @@ func (s *SQLiteStorage) GetPlaylistsFromUser(userId string) ([]Playlist, error) 
 	playlists := []Playlist{}
 	for rows.Next() {
 		p := Playlist{UserId: userId}
-		if err := rows.Scan(&p.PlaylistId, &p.Deleted, &p.Title, &p.ModifiedDate, &p.CoverBlob); err != nil {
+		if err := rows.Scan(&p.PlaylistId, &p.Title, &p.ModifiedDate, &p.CoverBlob); err != nil {
 			return nil, err
 		}
 		playlists = append(playlists, p)

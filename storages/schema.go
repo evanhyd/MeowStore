@@ -11,7 +11,6 @@ const (
 type Playlist struct {
 	UserId       string `db:"user_id" json:"userId"`
 	PlaylistId   int64  `db:"playlist_id" json:"playlistId"`
-	Deleted      bool   `db:"deleted" json:"deleted"`
 	Title        string `db:"title" json:"title"`
 	ModifiedDate int64  `db:"modified_date" json:"modifiedDate"`
 	CoverBlob    []byte `db:"cover_blob" json:"coverBlob"`

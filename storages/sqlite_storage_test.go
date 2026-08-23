@@ -26,7 +26,6 @@ func TestPlaylistCRUD(t *testing.T) {
 	p1 := Playlist{
 		UserId:       userId,
 		PlaylistId:   1,
-		Deleted:      false,
 		Title:        "My Favorite Songs",
 		ModifiedDate: time.Now().UnixNano(),
 		CoverBlob:    []byte("fake-image-data"),
@@ -49,7 +48,6 @@ func TestPlaylistCRUD(t *testing.T) {
 	p2 := Playlist{
 		UserId:       userId,
 		PlaylistId:   2,
-		Deleted:      true,
 		Title:        "Deleted Playlist",
 		ModifiedDate: time.Now().UnixNano(),
 		CoverBlob:    []byte(""),
@@ -144,7 +142,6 @@ func TestPlaylistMusicCRUD(t *testing.T) {
 	playlist := Playlist{
 		UserId:       userId,
 		PlaylistId:   playlistId,
-		Deleted:      false,
 		Title:        "Mix 2026",
 		ModifiedDate: time.Now().UnixNano(),
 		CoverBlob:    []byte{},
