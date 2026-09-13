@@ -59,7 +59,7 @@ MeowStore is a lightweight Go service for managing a user's music library and pl
   "playlistId": 42,
   "musicId": "abc123",
   "source": 1,
-  "addedAt": 1720000000000000000
+  "modifiedDate": 1720000000000000000
 }
 ```
 
@@ -161,7 +161,7 @@ Response:
     { "musicId": "abc123", "source": 1, "title": "Midnight City", "lengthSeconds": 240 }
   ],
   "relations": [
-    { "userId": "user-123", "playlistId": 42, "musicId": "abc123", "source": 1, "addedAt": 1720000000000000000 }
+    { "userId": "user-123", "playlistId": 42, "musicId": "abc123", "source": 1, "modifiedDate": 1720000000000000000 }
   ]
 }
 ```
@@ -217,7 +217,7 @@ Response:
 {}
 ```
 
-#### POST /api/getPlaylistsFromUser
+#### POST /api/getPlaylists
 
 List all playlists for the authenticated user.
 
@@ -317,7 +317,7 @@ Response:
 
 ### Playlist relation endpoints
 
-#### POST /api/putMusicInPlaylist
+#### POST /api/putPlaylistMusic
 
 Add a music track to a playlist.
 
@@ -326,10 +326,12 @@ Request:
 ```json
 {
   "token": "<jwt>",
-  "playlistId": 42,
-  "musicId": "abc123",
-  "source": 1,
-  "addedAt": 1720000000000000000
+  "playlistMusic": {
+    "playlistId": 42,
+    "musicId": "abc123",
+    "source": 1,
+    "modifiedDate": 1720000000000000000
+  }
 }
 ```
 
@@ -339,7 +341,7 @@ Response:
 {}
 ```
 
-#### POST /api/putMusicInPlaylistBulk
+#### POST /api/putPlaylistMusicBulk
 
 Add many tracks to a playlist in one request.
 
@@ -348,9 +350,9 @@ Request:
 ```json
 {
   "token": "<jwt>",
-  "relations": [
-    { "userId": "user-123", "playlistId": 42, "musicId": "abc123", "source": 1, "addedAt": 1720000000000000000 },
-    { "userId": "user-123", "playlistId": 42, "musicId": "def456", "source": 2, "addedAt": 1720000000000000001 }
+  "playlistMusic": [
+    { "userId": "user-123", "playlistId": 42, "musicId": "abc123", "source": 1, "modifiedDate": 1720000000000000000 },
+    { "userId": "user-123", "playlistId": 42, "musicId": "def456", "source": 2, "modifiedDate": 1720000000000000001 }
   ]
 }
 ```
@@ -361,7 +363,7 @@ Response:
 {}
 ```
 
-#### POST /api/deleteMusicFromPlaylist
+#### POST /api/deletePlaylistMusic
 
 Remove a music entry from a playlist.
 
