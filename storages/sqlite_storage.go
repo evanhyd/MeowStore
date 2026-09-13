@@ -19,11 +19,14 @@ type SQLiteStorage struct {
 }
 
 func NewSQLiteStorage(dbPath string) *SQLiteStorage {
-	db, err := sql.Open("sqlite", dbPath)
+	dsn := dbPath + "?_pragma=busy_timeout(10000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(ON)"
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		slog.Error("failed to open SQLite database", "error", err)
 		return nil
 	}
+	db.SetMaxOpenConns(1)
+
 	if _, err := db.Exec(schemaSQL); err != nil {
 		slog.Error("failed to create schema", "error", err)
 		return nil
