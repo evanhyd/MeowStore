@@ -8,6 +8,7 @@ import (
 	"meowstore/storages"
 	"net/http"
 	"os"
+	"runtime/debug"
 )
 
 func main() {
@@ -20,6 +21,16 @@ func main() {
 	// Logger.
 	logger := loggers.InitializeGlobalLogger(*logFlag)
 	defer logger.Close()
+
+	// Panic handler.
+	defer func() {
+		if e := recover(); e != nil {
+			slog.Error("server crashed",
+				"error", e,
+				"stack", string(debug.Stack()),
+			)
+		}
+	}()
 
 	// SQL storage.
 	storage := storages.NewSQLiteStorage(*dbFlag)
@@ -45,10 +56,10 @@ func main() {
 	mux.HandleFunc("POST /api/getMusic", service.GetMusic)
 	mux.HandleFunc("POST /api/putMusic", service.PutMusic)
 	mux.HandleFunc("POST /api/putMusicBulk", service.PutMusicBulk)
-	mux.HandleFunc("POST /api/getPlaylistsFromUser", service.GetPlaylistsFromUser)
-	mux.HandleFunc("POST /api/putMusicInPlaylist", service.PutMusicInPlaylist)
-	mux.HandleFunc("POST /api/putMusicInPlaylistBulk", service.PutMusicInPlaylistBulk)
-	mux.HandleFunc("POST /api/deleteMusicFromPlaylist", service.DeleteMusicFromPlaylist)
+	mux.HandleFunc("POST /api/getPlaylists", service.GetPlaylists)
+	mux.HandleFunc("POST /api/putPlaylistMusic", service.PutPlaylistMusic)
+	mux.HandleFunc("POST /api/putPlaylistMusicBulk", service.PutPlaylistMusicBulk)
+	mux.HandleFunc("POST /api/deletePlaylistMusic", service.DeletePlaylistMusic)
 
 	addr := ":" + *portFlag
 	slog.Info("Server is starting", "port", *portFlag)

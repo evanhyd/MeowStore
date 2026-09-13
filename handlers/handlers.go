@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 
+	"meowstore/schemas"
 	"meowstore/storages"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -19,7 +20,6 @@ func NewServiceHandler(storage storages.Storage, secret []byte) *ServiceHandler 
 	return &ServiceHandler{storage: storage, jwtSecret: secret}
 }
 
-// Parses the JWT and returns the subject (userId).
 func (h *ServiceHandler) validateToken(tokenString string) (string, error) {
 	if tokenString == "" {
 		return "", errors.New("missing token in request body")
@@ -52,128 +52,138 @@ func (h *ServiceHandler) validateToken(tokenString string) (string, error) {
 
 func (h *ServiceHandler) GetPlaylist(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		sendError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		schemas.ReplyError(w, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
 
-	var req GetPlaylistRequest
+	var req schemas.GetPlaylistRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		sendError(w, http.StatusBadRequest, "Invalid request body")
+		schemas.ReplyError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
 
 	userId, err := h.validateToken(req.Token)
 	if err != nil {
-		sendError(w, http.StatusUnauthorized, "Unauthorized: "+err.Error())
+		schemas.ReplyError(w, http.StatusUnauthorized, "Unauthorized: "+err.Error())
 		return
 	}
 
 	playlist, err := h.storage.GetPlaylist(userId, req.PlaylistId)
 	if err != nil {
-		sendError(w, http.StatusInternalServerError, "Playlist not found")
+		schemas.ReplyError(w, http.StatusInternalServerError, "Playlist not found")
 		return
 	}
 
-	sendJSON(w, http.StatusOK, GetPlaylistResponse{Playlist: playlist})
+	// Map storage to schema
+	schemas.ReplyJSON(w, http.StatusOK, schemas.GetPlaylistResponse{
+		Playlist: schemas.Playlist(playlist),
+	})
 }
 
 func (h *ServiceHandler) GetPlaylistContent(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		sendError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		schemas.ReplyError(w, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
 
-	var req GetPlaylistContentRequest
+	var req schemas.GetPlaylistContentRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		sendError(w, http.StatusBadRequest, "Invalid request body")
+		schemas.ReplyError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
 
 	userId, err := h.validateToken(req.Token)
 	if err != nil {
-		sendError(w, http.StatusUnauthorized, "Unauthorized: "+err.Error())
+		schemas.ReplyError(w, http.StatusUnauthorized, "Unauthorized: "+err.Error())
 		return
 	}
 
-	// 1. Get the playlist base data
 	playlist, err := h.storage.GetPlaylist(userId, req.PlaylistId)
 	if err != nil {
-		sendError(w, http.StatusInternalServerError, "Playlist not found")
+		schemas.ReplyError(w, http.StatusInternalServerError, "Playlist not found")
 		return
 	}
 
-	// 2. Get the populated tracks and relations
-	musics, relations, err := h.storage.GetMusicFromPlaylist(userId, req.PlaylistId)
+	storageMusics, err := h.storage.GetAllMusic(userId, req.PlaylistId)
 	if err != nil {
-		sendError(w, http.StatusInternalServerError, "Failed to retrieve music")
+		schemas.ReplyError(w, http.StatusInternalServerError, "Failed to retrieve music")
 		return
 	}
 
-	if musics == nil {
-		musics = []storages.Music{}
-	}
-	if relations == nil {
-		relations = []storages.PlaylistMusic{}
+	storageRelations, err := h.storage.GetAllPlaylistMusic(userId, req.PlaylistId)
+	if err != nil {
+		schemas.ReplyError(w, http.StatusInternalServerError, "Failed to retrieve playlist relations")
+		return
 	}
 
-	sendJSON(w, http.StatusOK, GetPlaylistContentResponse{
-		Playlist:  playlist,
-		Musics:    musics,
-		Relations: relations,
+	schemaMusics := make([]schemas.Music, len(storageMusics))
+	for i, m := range storageMusics {
+		schemaMusics[i] = schemas.Music(m)
+	}
+
+	schemaRelations := make([]schemas.PlaylistMusic, len(storageRelations))
+	for i, r := range storageRelations {
+		schemaRelations[i] = schemas.PlaylistMusic(r)
+	}
+
+	schemas.ReplyJSON(w, http.StatusOK, schemas.GetPlaylistContentResponse{
+		Playlist:  schemas.Playlist(playlist),
+		Musics:    schemaMusics,
+		Relations: schemaRelations,
 	})
 }
 
 func (h *ServiceHandler) PutPlaylist(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		sendError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		schemas.ReplyError(w, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
 
-	var req PutPlaylistRequest
+	var req schemas.PutPlaylistRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		sendError(w, http.StatusBadRequest, "Invalid request body")
+		schemas.ReplyError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
 
 	userId, err := h.validateToken(req.Token)
 	if err != nil {
-		sendError(w, http.StatusUnauthorized, "Unauthorized: "+err.Error())
+		schemas.ReplyError(w, http.StatusUnauthorized, "Unauthorized: "+err.Error())
 		return
 	}
 
 	req.Playlist.UserId = userId
-	if err := h.storage.PutPlaylist(req.Playlist); err != nil {
-		sendError(w, http.StatusInternalServerError, "Failed to save playlist")
+	if _, err := h.storage.PutPlaylist(storages.Playlist(req.Playlist)); err != nil {
+		schemas.ReplyError(w, http.StatusInternalServerError, "Failed to save playlist")
 		return
 	}
 
-	sendJSON(w, http.StatusOK, PutPlaylistResponse{Playlist: req.Playlist})
+	schemas.ReplyJSON(w, http.StatusOK, schemas.PutPlaylistResponse{Playlist: req.Playlist})
 }
 
 func (h *ServiceHandler) DeletePlaylist(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		sendError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		schemas.ReplyError(w, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
 
-	var req DeletePlaylistRequest
+	var req schemas.DeletePlaylistRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		sendError(w, http.StatusBadRequest, "Invalid request body")
+		schemas.ReplyError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
 
 	userId, err := h.validateToken(req.Token)
 	if err != nil {
-		sendError(w, http.StatusUnauthorized, "Unauthorized: "+err.Error())
+		schemas.ReplyError(w, http.StatusUnauthorized, "Unauthorized: "+err.Error())
 		return
 	}
 
 	if err := h.storage.DeletePlaylist(userId, req.PlaylistId); err != nil {
-		sendError(w, http.StatusInternalServerError, "Failed to delete playlist")
+		schemas.ReplyError(w, http.StatusInternalServerError, "Failed to delete playlist")
 		return
 	}
 
-	sendJSON(w, http.StatusOK, DeletePlaylistResponse{})
+	schemas.ReplyJSON(w, http.StatusOK, schemas.DeletePlaylistResponse{})
 }
 
 // ==========================================
@@ -182,201 +192,200 @@ func (h *ServiceHandler) DeletePlaylist(w http.ResponseWriter, r *http.Request) 
 
 func (h *ServiceHandler) GetMusic(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		sendError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		schemas.ReplyError(w, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
 
-	var req GetMusicRequest
+	var req schemas.GetMusicRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		sendError(w, http.StatusBadRequest, "Invalid request body")
+		schemas.ReplyError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
 
 	if _, err := h.validateToken(req.Token); err != nil {
-		sendError(w, http.StatusUnauthorized, "Unauthorized: "+err.Error())
+		schemas.ReplyError(w, http.StatusUnauthorized, "Unauthorized: "+err.Error())
 		return
 	}
 
 	music, err := h.storage.GetMusic(req.MusicId, req.Source)
 	if err != nil {
-		sendError(w, http.StatusInternalServerError, "Music not found")
+		schemas.ReplyError(w, http.StatusInternalServerError, "Music not found")
 		return
 	}
 
-	sendJSON(w, http.StatusOK, GetMusicResponse{Music: music})
+	schemas.ReplyJSON(w, http.StatusOK, schemas.GetMusicResponse{Music: schemas.Music(music)})
 }
 
 func (h *ServiceHandler) PutMusic(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		sendError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		schemas.ReplyError(w, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
 
-	var req PutMusicRequest
+	var req schemas.PutMusicRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		sendError(w, http.StatusBadRequest, "Invalid request body")
+		schemas.ReplyError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
 
 	if _, err := h.validateToken(req.Token); err != nil {
-		sendError(w, http.StatusUnauthorized, "Unauthorized: "+err.Error())
+		schemas.ReplyError(w, http.StatusUnauthorized, "Unauthorized: "+err.Error())
 		return
 	}
 
-	if err := h.storage.PutMusic(req.Music); err != nil {
-		sendError(w, http.StatusInternalServerError, "Failed to save music entity")
+	if err := h.storage.PutMusic(storages.Music(req.Music)); err != nil {
+		schemas.ReplyError(w, http.StatusInternalServerError, "Failed to save music entity")
 		return
 	}
 
-	sendJSON(w, http.StatusOK, PutMusicResponse{})
+	schemas.ReplyJSON(w, http.StatusOK, schemas.PutMusicResponse{})
 }
 
 func (h *ServiceHandler) PutMusicBulk(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		sendError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		schemas.ReplyError(w, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
 
-	var req PutMusicBulkRequest
+	var req schemas.PutMusicBulkRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		sendError(w, http.StatusBadRequest, "Invalid request body")
+		schemas.ReplyError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
 
 	if _, err := h.validateToken(req.Token); err != nil {
-		sendError(w, http.StatusUnauthorized, "Unauthorized: "+err.Error())
+		schemas.ReplyError(w, http.StatusUnauthorized, "Unauthorized: "+err.Error())
 		return
 	}
 
 	for i := range req.Music {
-		if err := h.storage.PutMusic(req.Music[i]); err != nil {
-			sendError(w, http.StatusInternalServerError, "Failed to save music entity")
+		if err := h.storage.PutMusic(storages.Music(req.Music[i])); err != nil {
+			schemas.ReplyError(w, http.StatusInternalServerError, "Failed to save music entity")
 			return
 		}
 	}
 
-	sendJSON(w, http.StatusOK, PutMusicBulkResponse{})
+	schemas.ReplyJSON(w, http.StatusOK, schemas.PutMusicBulkResponse{})
 }
 
 // ==========================================
 // PLAYLIST RELATION HANDLERS
 // ==========================================
 
-func (h *ServiceHandler) GetPlaylistsFromUser(w http.ResponseWriter, r *http.Request) {
+func (h *ServiceHandler) GetPlaylists(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		sendError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		schemas.ReplyError(w, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
 
-	var req GetPlaylistsFromUserRequest
+	var req schemas.GetPlaylistsRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		sendError(w, http.StatusBadRequest, "Invalid request body")
+		schemas.ReplyError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
 
 	userId, err := h.validateToken(req.Token)
 	if err != nil {
-		sendError(w, http.StatusUnauthorized, "Unauthorized: "+err.Error())
+		schemas.ReplyError(w, http.StatusUnauthorized, "Unauthorized: "+err.Error())
 		return
 	}
 
-	playlists, err := h.storage.GetPlaylistsFromUser(userId)
+	playlists, err := h.storage.GetPlaylists(userId)
 	if err != nil {
-		sendError(w, http.StatusInternalServerError, "Failed to fetch playlists")
+		schemas.ReplyError(w, http.StatusInternalServerError, "Failed to fetch playlists")
 		return
 	}
 
-	if playlists == nil {
-		playlists = []storages.Playlist{}
+	schemaPlaylists := make([]schemas.Playlist, len(playlists))
+	for i, p := range playlists {
+		schemaPlaylists[i] = schemas.Playlist(p)
 	}
 
-	sendJSON(w, http.StatusOK, GetPlaylistsFromUserResponse{Playlists: playlists})
+	schemas.ReplyJSON(w, http.StatusOK, schemas.GetPlaylistsResponse{Playlists: schemaPlaylists})
 }
 
-func (h *ServiceHandler) PutMusicInPlaylist(w http.ResponseWriter, r *http.Request) {
+func (h *ServiceHandler) PutPlaylistMusic(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		sendError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		schemas.ReplyError(w, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
 
-	var req PutMusicInPlaylistRequest
+	var req schemas.PutPlaylistMusicRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		sendError(w, http.StatusBadRequest, "Invalid request body")
+		schemas.ReplyError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
 
 	userId, err := h.validateToken(req.Token)
 	if err != nil {
-		sendError(w, http.StatusUnauthorized, "Unauthorized: "+err.Error())
+		schemas.ReplyError(w, http.StatusUnauthorized, "Unauthorized: "+err.Error())
 		return
 	}
 
-	relation := storages.PlaylistMusic{
-		UserId:     userId,
-		PlaylistId: req.PlaylistId,
-		MusicId:    req.MusicId,
-		Source:     req.Source,
-		AddedAt:    req.AddedAt,
-	}
+	req.PlaylistMusic.UserId = userId
 
-	if err := h.storage.PutMusicInPlaylist(relation); err != nil {
-		sendError(w, http.StatusInternalServerError, "Failed to save playlist relation")
+	if err := h.storage.PutPlaylistMusic(storages.PlaylistMusic(req.PlaylistMusic)); err != nil {
+		schemas.ReplyError(w, http.StatusInternalServerError, "Failed to save playlist relation")
 		return
 	}
 
-	sendJSON(w, http.StatusOK, PutMusicInPlaylistResponse{})
+	schemas.ReplyJSON(w, http.StatusOK, schemas.PutPlaylistMusicResponse{})
 }
 
-func (h *ServiceHandler) PutMusicInPlaylistBulk(w http.ResponseWriter, r *http.Request) {
+func (h *ServiceHandler) PutPlaylistMusicBulk(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		sendError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		schemas.ReplyError(w, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
 
-	var req PutMusicInPlaylistBulkRequest
+	var req schemas.PutPlaylistMusicBulkRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		sendError(w, http.StatusBadRequest, "Invalid request body")
+		schemas.ReplyError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
 
-	_, err := h.validateToken(req.Token)
+	userId, err := h.validateToken(req.Token)
 	if err != nil {
-		sendError(w, http.StatusUnauthorized, "Unauthorized: "+err.Error())
+		schemas.ReplyError(w, http.StatusUnauthorized, "Unauthorized: "+err.Error())
 		return
 	}
 
-	for i := range req.Relations {
-		if err := h.storage.PutMusicInPlaylist(req.Relations[i]); err != nil {
-			sendError(w, http.StatusInternalServerError, "Failed to save playlist relation")
+	for i := range req.PlaylistMusic {
+		req.PlaylistMusic[i].UserId = userId
+
+		if err := h.storage.PutPlaylistMusic(storages.PlaylistMusic(req.PlaylistMusic[i])); err != nil {
+			schemas.ReplyError(w, http.StatusInternalServerError, "Failed to save playlist relation")
 			return
 		}
 	}
 
-	sendJSON(w, http.StatusOK, PutMusicInPlaylistBulkResponse{})
+	schemas.ReplyJSON(w, http.StatusOK, schemas.PutPlaylistMusicBulkResponse{})
 }
 
-func (h *ServiceHandler) DeleteMusicFromPlaylist(w http.ResponseWriter, r *http.Request) {
+func (h *ServiceHandler) DeletePlaylistMusic(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		sendError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		schemas.ReplyError(w, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
 
-	var req DeleteMusicFromPlaylistRequest
+	var req schemas.DeletePlaylistMusicRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		sendError(w, http.StatusBadRequest, "Invalid request body")
+		schemas.ReplyError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
 
 	userId, err := h.validateToken(req.Token)
 	if err != nil {
-		sendError(w, http.StatusUnauthorized, "Unauthorized: "+err.Error())
+		schemas.ReplyError(w, http.StatusUnauthorized, "Unauthorized: "+err.Error())
 		return
 	}
 
-	if err := h.storage.DeleteMusicFromPlaylist(userId, req.PlaylistId, req.MusicId, req.Source); err != nil {
-		sendError(w, http.StatusInternalServerError, "Failed to delete music from playlist")
+	req.PlaylistMusic.UserId = userId
+
+	if err := h.storage.DeletePlaylistMusic(storages.PlaylistMusic(req.PlaylistMusic)); err != nil {
+		schemas.ReplyError(w, http.StatusInternalServerError, "Failed to delete music from playlist")
 		return
 	}
 
-	sendJSON(w, http.StatusOK, DeleteMusicFromPlaylistResponse{})
+	schemas.ReplyJSON(w, http.StatusOK, schemas.DeletePlaylistMusicResponse{})
 }

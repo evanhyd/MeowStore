@@ -2,8 +2,9 @@ package storages
 
 import (
 	"database/sql"
-	_ "embed"
 	"log/slog"
+
+	_ "embed"
 
 	_ "modernc.org/sqlite"
 )
@@ -18,53 +19,63 @@ type SQLiteStorage struct {
 }
 
 func NewSQLiteStorage(dbPath string) *SQLiteStorage {
-	storage := SQLiteStorage{}
-
-	var err error
-	storage.db, err = sql.Open("sqlite", dbPath)
+	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		slog.Error("failed to open SQLite database", "error", err)
-		panic("failed to open SQLite database")
+		return nil
 	}
-	if _, err := storage.db.Exec(schemaSQL); err != nil {
+	if _, err := db.Exec(schemaSQL); err != nil {
 		slog.Error("failed to create schema", "error", err)
-		panic("failed to create schema")
+		return nil
 	}
-	return &storage
+
+	return &SQLiteStorage{
+		db: db,
+	}
 }
 
-func (s *SQLiteStorage) Close() error {
-	return s.db.Close()
-}
+// ---------------- Playlist Methods ----------------
 
-func (s *SQLiteStorage) PutPlaylist(playlist Playlist) error {
-	_, err := s.db.Exec(`INSERT INTO playlist(user_id, playlist_id, title, modified_date, cover_blob) VALUES (?, ?, ?, ?, ?) 
-	ON CONFLICT (user_id, playlist_id) DO UPDATE SET title = excluded.title, modified_date = excluded.modified_date, cover_blob = excluded.cover_blob`,
-		playlist.UserId, playlist.PlaylistId, playlist.Title, playlist.ModifiedDate, playlist.CoverBlob)
-	return err
+func (s *SQLiteStorage) PutPlaylist(p Playlist) (Playlist, error) {
+	_, err := s.db.Exec(
+		`INSERT INTO playlist (user_id, playlist_id, title, modified_date, cover_blob)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(user_id, playlist_id) DO UPDATE SET 
+            title = excluded.title, 
+            modified_date = excluded.modified_date, 
+            cover_blob = excluded.cover_blob
+        WHERE excluded.modified_date > playlist.modified_date`,
+		p.UserId, p.PlaylistId, p.Title, p.ModifiedDate, p.CoverBlob,
+	)
+	return p, err
 }
 
 func (s *SQLiteStorage) GetPlaylist(userId string, playlistId int64) (Playlist, error) {
-	row := s.db.QueryRow(`SELECT title, modified_date, cover_blob FROM playlist WHERE user_id = ? AND playlist_id = ?`, userId, playlistId)
+	var p Playlist
+	err := s.db.QueryRow(
+		`SELECT user_id, playlist_id, title, modified_date, cover_blob
+        FROM playlist WHERE user_id = ? AND playlist_id = ?`,
+		userId, playlistId,
+	).Scan(&p.UserId, &p.PlaylistId, &p.Title, &p.ModifiedDate, &p.CoverBlob)
 
-	playlist := Playlist{UserId: userId, PlaylistId: playlistId}
-	if err := row.Scan(&playlist.Title, &playlist.ModifiedDate, &playlist.CoverBlob); err != nil {
-		return Playlist{}, err
-	}
-	return playlist, nil
+	return p, err
 }
 
-func (s *SQLiteStorage) GetPlaylistsFromUser(userId string) ([]Playlist, error) {
-	rows, err := s.db.Query(`SELECT playlist_id, title, modified_date, cover_blob FROM playlist WHERE user_id = ?`, userId)
+func (s *SQLiteStorage) GetPlaylists(userId string) ([]Playlist, error) {
+	rows, err := s.db.Query(
+		`SELECT user_id, playlist_id, title, modified_date, cover_blob 
+         FROM playlist WHERE user_id = ? ORDER BY modified_date DESC`,
+		userId,
+	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	playlists := []Playlist{}
+	playlists := make([]Playlist, 0)
 	for rows.Next() {
-		p := Playlist{UserId: userId}
-		if err := rows.Scan(&p.PlaylistId, &p.Title, &p.ModifiedDate, &p.CoverBlob); err != nil {
+		var p Playlist
+		if err := rows.Scan(&p.UserId, &p.PlaylistId, &p.Title, &p.ModifiedDate, &p.CoverBlob); err != nil {
 			return nil, err
 		}
 		playlists = append(playlists, p)
@@ -81,72 +92,112 @@ func (s *SQLiteStorage) DeletePlaylist(userId string, playlistId int64) error {
 	return err
 }
 
-func (s *SQLiteStorage) PutMusic(music Music) error {
-	_, err := s.db.Exec(`INSERT INTO music(music_id, source, title, length_seconds) VALUES (?, ?, ?, ?) 
-	ON CONFLICT (music_id, source) DO UPDATE SET title = excluded.title, length_seconds = excluded.length_seconds`,
-		music.MusicId, music.Source, music.Title, music.LengthSeconds)
+// ---------------- PlaylistMusic Methods ----------------
+
+func (s *SQLiteStorage) PutPlaylistMusic(relation PlaylistMusic) error {
+	_, err := s.db.Exec(
+		`INSERT INTO playlist_music (user_id, playlist_id, music_id, source, modified_date) 
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(user_id, playlist_id, music_id, source) 
+         DO UPDATE SET modified_date = excluded.modified_date
+         WHERE excluded.modified_date > playlist_music.modified_date`,
+		relation.UserId, relation.PlaylistId, relation.MusicId, relation.Source, relation.ModifiedDate,
+	)
+	return err
+}
+
+func (s *SQLiteStorage) GetAllPlaylistMusic(userId string, playlistId int64) ([]PlaylistMusic, error) {
+	rows, err := s.db.Query(
+		`SELECT user_id, playlist_id, music_id, source, modified_date 
+         FROM playlist_music WHERE user_id = ? AND playlist_id = ?
+         ORDER BY modified_date ASC`,
+		userId, playlistId,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	relations := make([]PlaylistMusic, 0)
+	for rows.Next() {
+		var r PlaylistMusic
+		if err := rows.Scan(&r.UserId, &r.PlaylistId, &r.MusicId, &r.Source, &r.ModifiedDate); err != nil {
+			return nil, err
+		}
+		relations = append(relations, r)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return relations, nil
+}
+
+func (s *SQLiteStorage) DeletePlaylistMusic(rel PlaylistMusic) error {
+	_, err := s.db.Exec(
+		`DELETE FROM playlist_music WHERE user_id = ? AND playlist_id = ? AND music_id = ? AND source = ?`,
+		rel.UserId, rel.PlaylistId, rel.MusicId, rel.Source,
+	)
+	return err
+}
+
+// ---------------- Music Methods ----------------
+
+func (s *SQLiteStorage) PutMusic(m Music) error {
+	_, err := s.db.Exec(
+		`INSERT INTO music (music_id, source, title, length_seconds) VALUES (?, ?, ?, ?)
+        ON CONFLICT(music_id, source) DO UPDATE SET title = excluded.title, length_seconds = excluded.length_seconds`,
+		m.MusicId, m.Source, m.Title, m.LengthSeconds,
+	)
 	return err
 }
 
 func (s *SQLiteStorage) GetMusic(musicId string, source MusicSource) (Music, error) {
-	row := s.db.QueryRow(`SELECT title, length_seconds FROM music WHERE music_id = ? AND source = ?`, musicId, source)
+	var m Music
+	err := s.db.QueryRow(
+		`SELECT music_id, source, title, length_seconds FROM music WHERE music_id = ? AND source = ?`,
+		musicId, int64(source),
+	).Scan(&m.MusicId, &m.Source, &m.Title, &m.LengthSeconds)
 
-	music := Music{MusicId: musicId, Source: source}
-	if err := row.Scan(&music.Title, &music.LengthSeconds); err != nil {
-		return Music{}, err
-	}
-	return music, nil
+	return m, err
 }
 
-func (s *SQLiteStorage) DeleteMusic(musicId string, source MusicSource) error {
-	_, err := s.db.Exec(`DELETE FROM music WHERE music_id = ? AND source = ?`, musicId, source)
-	return err
-}
-
-func (s *SQLiteStorage) PutMusicInPlaylist(pm PlaylistMusic) error {
-	_, err := s.db.Exec(`INSERT INTO playlist_music(user_id, playlist_id, music_id, source, added_at) VALUES (?, ?, ?, ?, ?) 
-	ON CONFLICT (user_id, playlist_id, music_id, source) DO UPDATE SET added_at = excluded.added_at`,
-		pm.UserId, pm.PlaylistId, pm.MusicId, pm.Source, pm.AddedAt)
-	return err
-}
-
-func (s *SQLiteStorage) GetMusicFromPlaylist(userId string, playlistId int64) ([]Music, []PlaylistMusic, error) {
-	query := `SELECT m.music_id, m.source, m.title, m.length_seconds, pm.added_at 
-		FROM playlist_music pm
-		JOIN music m ON pm.music_id = m.music_id AND pm.source = m.source
-		WHERE pm.user_id = ? AND pm.playlist_id = ?`
-	rows, err := s.db.Query(query, userId, playlistId)
+func (s *SQLiteStorage) GetAllMusic(userId string, playlistId int64) ([]Music, error) {
+	rows, err := s.db.Query(
+		`SELECT m.music_id, m.source, m.title, m.length_seconds
+         FROM music m
+         JOIN playlist_music pm ON m.music_id = pm.music_id AND m.source = pm.source
+         WHERE pm.user_id = ? AND pm.playlist_id = ?
+         ORDER BY pm.modified_date ASC`,
+		userId, playlistId,
+	)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	defer rows.Close()
 
-	musics := []Music{}
-	playlistMusics := []PlaylistMusic{}
-
+	musics := make([]Music, 0)
 	for rows.Next() {
 		var m Music
-		pm := PlaylistMusic{UserId: userId, PlaylistId: playlistId}
-
-		if err := rows.Scan(&m.MusicId, &m.Source, &m.Title, &m.LengthSeconds, &pm.AddedAt); err != nil {
-			return nil, nil, err
+		if err := rows.Scan(&m.MusicId, &m.Source, &m.Title, &m.LengthSeconds); err != nil {
+			return nil, err
 		}
-
-		pm.MusicId = m.MusicId
-		pm.Source = m.Source
-
 		musics = append(musics, m)
-		playlistMusics = append(playlistMusics, pm)
 	}
 
 	if err := rows.Err(); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	return musics, playlistMusics, nil
+	return musics, nil
 }
 
-func (s *SQLiteStorage) DeleteMusicFromPlaylist(userId string, playlistId int64, musicId string, source MusicSource) error {
-	_, err := s.db.Exec(`DELETE FROM playlist_music WHERE user_id = ? AND playlist_id = ? AND music_id = ? AND source = ?`,
-		userId, playlistId, musicId, source)
+func (s *SQLiteStorage) DeleteMusic(musicId string, source MusicSource) error {
+	_, err := s.db.Exec(`DELETE FROM music WHERE music_id = ? AND source = ?`, musicId, int64(source))
 	return err
+}
+
+// ---------------- Closer ----------------
+
+func (s *SQLiteStorage) Close() error {
+	return s.db.Close()
 }
