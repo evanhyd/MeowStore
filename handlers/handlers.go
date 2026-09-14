@@ -53,11 +53,6 @@ func (h *ServiceHandler) validateToken(tokenString string) (string, error) {
 // ==========================================
 
 func (h *ServiceHandler) GetPlaylist(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		schemas.ReplyError(w, http.StatusMethodNotAllowed, "Method not allowed: must be POST")
-		return
-	}
-
 	var req schemas.GetPlaylistRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		schemas.ReplyError(w, http.StatusBadRequest, fmt.Sprintf("Invalid JSON body: %v", err))
@@ -83,11 +78,6 @@ func (h *ServiceHandler) GetPlaylist(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *ServiceHandler) GetPlaylistContent(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		schemas.ReplyError(w, http.StatusMethodNotAllowed, "Method not allowed: must be POST")
-		return
-	}
-
 	var req schemas.GetPlaylistContentRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		schemas.ReplyError(w, http.StatusBadRequest, fmt.Sprintf("Invalid JSON body: %v", err))
@@ -139,11 +129,6 @@ func (h *ServiceHandler) GetPlaylistContent(w http.ResponseWriter, r *http.Reque
 }
 
 func (h *ServiceHandler) PutPlaylist(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		schemas.ReplyError(w, http.StatusMethodNotAllowed, "Method not allowed: must be POST")
-		return
-	}
-
 	var req schemas.PutPlaylistRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		schemas.ReplyError(w, http.StatusBadRequest, fmt.Sprintf("Invalid JSON body: %v", err))
@@ -157,23 +142,18 @@ func (h *ServiceHandler) PutPlaylist(w http.ResponseWriter, r *http.Request) {
 	}
 
 	req.Playlist.UserId = userId
-	slog.Info("help", "a", req.Playlist)
-	slog.Info("help", "a", storages.Playlist(req.Playlist))
-	if _, err := h.storage.PutPlaylist(storages.Playlist(req.Playlist)); err != nil {
+
+	modifiedPlaylist, err := h.storage.PutPlaylist(storages.Playlist(req.Playlist))
+	if err != nil {
 		slog.Error("failed to put playlist", "userId", userId, "playlistId", req.Playlist.PlaylistId, "title", req.Playlist.Title, "modifiedDate", req.Playlist.ModifiedDate, "error", err)
 		schemas.ReplyError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to save playlist (id=%d, title=%q): %v", req.Playlist.PlaylistId, req.Playlist.Title, err))
 		return
 	}
 
-	schemas.ReplyJSON(w, http.StatusOK, schemas.PutPlaylistResponse{Playlist: req.Playlist})
+	schemas.ReplyJSON(w, http.StatusOK, schemas.PutPlaylistResponse{Playlist: schemas.Playlist(modifiedPlaylist)})
 }
 
 func (h *ServiceHandler) DeletePlaylist(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		schemas.ReplyError(w, http.StatusMethodNotAllowed, "Method not allowed: must be POST")
-		return
-	}
-
 	var req schemas.DeletePlaylistRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		schemas.ReplyError(w, http.StatusBadRequest, fmt.Sprintf("Invalid JSON body: %v", err))
@@ -200,11 +180,6 @@ func (h *ServiceHandler) DeletePlaylist(w http.ResponseWriter, r *http.Request) 
 // ==========================================
 
 func (h *ServiceHandler) GetMusic(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		schemas.ReplyError(w, http.StatusMethodNotAllowed, "Method not allowed: must be POST")
-		return
-	}
-
 	var req schemas.GetMusicRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		schemas.ReplyError(w, http.StatusBadRequest, fmt.Sprintf("Invalid JSON body: %v", err))
@@ -227,11 +202,6 @@ func (h *ServiceHandler) GetMusic(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *ServiceHandler) PutMusic(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		schemas.ReplyError(w, http.StatusMethodNotAllowed, "Method not allowed: must be POST")
-		return
-	}
-
 	var req schemas.PutMusicRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		schemas.ReplyError(w, http.StatusBadRequest, fmt.Sprintf("Invalid JSON body: %v", err))
@@ -253,11 +223,6 @@ func (h *ServiceHandler) PutMusic(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *ServiceHandler) PutMusicBulk(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		schemas.ReplyError(w, http.StatusMethodNotAllowed, "Method not allowed: must be POST")
-		return
-	}
-
 	var req schemas.PutMusicBulkRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		schemas.ReplyError(w, http.StatusBadRequest, fmt.Sprintf("Invalid JSON body: %v", err))
@@ -294,11 +259,6 @@ func (h *ServiceHandler) PutMusicBulk(w http.ResponseWriter, r *http.Request) {
 // ==========================================
 
 func (h *ServiceHandler) GetPlaylists(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		schemas.ReplyError(w, http.StatusMethodNotAllowed, "Method not allowed: must be POST")
-		return
-	}
-
 	var req schemas.GetPlaylistsRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		schemas.ReplyError(w, http.StatusBadRequest, fmt.Sprintf("Invalid JSON body: %v", err))
@@ -327,11 +287,6 @@ func (h *ServiceHandler) GetPlaylists(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *ServiceHandler) PutPlaylistMusic(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		schemas.ReplyError(w, http.StatusMethodNotAllowed, "Method not allowed: must be POST")
-		return
-	}
-
 	var req schemas.PutPlaylistMusicRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		schemas.ReplyError(w, http.StatusBadRequest, fmt.Sprintf("Invalid JSON body: %v", err))
@@ -365,11 +320,6 @@ func (h *ServiceHandler) PutPlaylistMusic(w http.ResponseWriter, r *http.Request
 }
 
 func (h *ServiceHandler) PutPlaylistMusicBulk(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		schemas.ReplyError(w, http.StatusMethodNotAllowed, "Method not allowed: must be POST")
-		return
-	}
-
 	var req schemas.PutPlaylistMusicBulkRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		schemas.ReplyError(w, http.StatusBadRequest, fmt.Sprintf("Invalid JSON body: %v", err))
@@ -406,11 +356,6 @@ func (h *ServiceHandler) PutPlaylistMusicBulk(w http.ResponseWriter, r *http.Req
 }
 
 func (h *ServiceHandler) DeletePlaylistMusic(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		schemas.ReplyError(w, http.StatusMethodNotAllowed, "Method not allowed: must be POST")
-		return
-	}
-
 	var req schemas.DeletePlaylistMusicRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		schemas.ReplyError(w, http.StatusBadRequest, fmt.Sprintf("Invalid JSON body: %v", err))

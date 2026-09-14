@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"runtime/debug"
+	"time"
 )
 
 func main() {
@@ -61,9 +62,16 @@ func main() {
 	mux.HandleFunc("POST /api/putPlaylistMusicBulk", service.PutPlaylistMusicBulk)
 	mux.HandleFunc("POST /api/deletePlaylistMusic", service.DeletePlaylistMusic)
 
-	addr := ":" + *portFlag
 	slog.Info("Server is starting", "port", *portFlag)
-	if err := http.ListenAndServe(addr, mux); err != nil {
+	addr := ":" + *portFlag
+	server := &http.Server{
+		Addr:         addr,
+		Handler:      mux,
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		IdleTimeout:  60 * time.Second,
+	}
+	if err := server.ListenAndServe(); err != nil {
 		slog.Error("Server crashed or failed to start", "error", err)
 	}
 }
