@@ -38,15 +38,15 @@ func NewSQLiteStorage(dbPath string) *SQLiteStorage {
 }
 
 // ---------------- Playlist Methods ----------------
-
 func (s *SQLiteStorage) PutPlaylist(p Playlist) (Playlist, error) {
 	_, err := s.db.Exec(
 		`INSERT INTO playlist (user_id, playlist_id, title, modified_date, cover_blob)
-        VALUES (?, ?, ?, ?, ?)
-        ON CONFLICT(user_id, playlist_id) DO UPDATE SET 
-            title = excluded.title, 
-            modified_date = excluded.modified_date, 
-            cover_blob = excluded.cover_blob`,
+		 VALUES (?, ?, ?, ?, ?)
+		 ON CONFLICT(user_id, playlist_id) DO UPDATE SET 
+			 title = excluded.title, 
+			 modified_date = excluded.modified_date, 
+			 cover_blob = excluded.cover_blob
+		 WHERE excluded.modified_date > playlist.modified_date`, // Only accept newer data
 		p.UserId, p.PlaylistId, p.Title, p.ModifiedDate, p.CoverBlob,
 	)
 	return p, err
@@ -94,15 +94,13 @@ func (s *SQLiteStorage) DeletePlaylist(userId string, playlistId int64) error {
 	return err
 }
 
-// ---------------- PlaylistMusic Methods ----------------
-
 func (s *SQLiteStorage) PutPlaylistMusic(relation PlaylistMusic) error {
 	_, err := s.db.Exec(
 		`INSERT INTO playlist_music (user_id, playlist_id, music_id, source, modified_date) 
-         VALUES (?, ?, ?, ?, ?)
-         ON CONFLICT(user_id, playlist_id, music_id, source) 
-         DO UPDATE SET modified_date = excluded.modified_date
-         WHERE excluded.modified_date > playlist_music.modified_date`,
+		 VALUES (?, ?, ?, ?, ?)
+		 ON CONFLICT(user_id, playlist_id, music_id, source) 
+		 DO UPDATE SET modified_date = excluded.modified_date
+		 WHERE excluded.modified_date > playlist_music.modified_date`,
 		relation.UserId, relation.PlaylistId, relation.MusicId, relation.Source, relation.ModifiedDate,
 	)
 	return err
