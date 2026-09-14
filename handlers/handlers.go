@@ -158,7 +158,7 @@ func (h *ServiceHandler) PutPlaylist(w http.ResponseWriter, r *http.Request) {
 
 	req.Playlist.UserId = userId
 	if _, err := h.storage.PutPlaylist(storages.Playlist(req.Playlist)); err != nil {
-		slog.Error("failed to put playlist", "userId", userId, "playlistId", req.Playlist.PlaylistId, "title", req.Playlist.Title, "error", err)
+		slog.Error("failed to put playlist", "userId", userId, "playlistId", req.Playlist.PlaylistId, "title", req.Playlist.Title, "modifiedDate", req.Playlist.ModifiedDate, "error", err)
 		schemas.ReplyError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to save playlist (id=%d, title=%q): %v", req.Playlist.PlaylistId, req.Playlist.Title, err))
 		return
 	}

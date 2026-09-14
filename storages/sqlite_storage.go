@@ -46,8 +46,7 @@ func (s *SQLiteStorage) PutPlaylist(p Playlist) (Playlist, error) {
         ON CONFLICT(user_id, playlist_id) DO UPDATE SET 
             title = excluded.title, 
             modified_date = excluded.modified_date, 
-            cover_blob = excluded.cover_blob
-        WHERE excluded.modified_date > playlist.modified_date`,
+            cover_blob = excluded.cover_blob`,
 		p.UserId, p.PlaylistId, p.Title, p.ModifiedDate, p.CoverBlob,
 	)
 	return p, err
